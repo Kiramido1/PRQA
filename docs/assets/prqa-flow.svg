@@ -287,7 +287,7 @@
   <g>
     <text class="logline log0" x="110" y="427"><tspan class="prompt">❯</tspan> gh · PR #2 labelled ‘to be test’ · head 292ad89</text>
     <text class="logline log1" x="110" y="427"><tspan class="prompt">❯</tspan> n8n → POST /stage/discover · eligible: [#2]</text>
-    <text class="logline log2" x="110" y="427"><tspan class="prompt">❯</tspan> claimed Amenly-Product#2@292ad89 · run state locked</text>
+    <text class="logline log2" x="110" y="427"><tspan class="prompt">❯</tspan> claimed OWNER/REPO#2@292ad89 · run state locked</text>
     <text class="logline log3" x="110" y="427"><tspan class="prompt">❯</tspan> disposable env up · OpenAPI loaded · identity probe ok</text>
     <text class="logline log4" x="110" y="427"><tspan class="prompt">❯</tspan> Groq: scope ✓  coverage ✓  sections ✓ · within 8k TPM</text>
     <text class="logline log5" x="110" y="427"><tspan class="prompt">❯</tspan> quality gate 98 / 85 → ACCEPTED · hard fails: none</text>

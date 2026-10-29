@@ -28,7 +28,7 @@ Add the label **`to be test`** to a pull request and PRQA, without anyone pressi
 5. **Reports**: `report.md` + a schema-validated `qa-result.json`, then a summary with every defect posted to Discord.
 6. **Cleans up**: the environment is destroyed. A commit is never tested twice.
 
-> A recorded example: PR #2 of `Kiramido1/Amenly-Product` was tested in ~7 minutes. Out of 30 scenarios, 14 passed,
+> A recorded example: one pull request was tested in ~7 minutes. Out of 30 scenarios, 14 passed,
 > 11 failed and 5 did not apply. Among the 11 defects: `calc` answered `1e308 + 1e308` with HTTP 200 and `result: null`,
 > and `password-strength` echoed the plaintext password plus an unsalted MD5 hash.
 
@@ -108,79 +108,130 @@ python3 scripts/setup/prqa_configure_secret.py discord --send-test
 make run                                                   # creates compose/.env on first run
 ```
 
-Next, prepare the repository you want tested: [Preparing the repository under test](#preparing-the-repository-under-test).
+Next, connect the projects you want tested: [Connecting your project](#connecting-your-project).
 
-## Preparing the repository under test
+## Connecting your project
 
-PRQA **pulls** from GitHub: nothing is installed in the tested repository, no workflow file, no secret, no webhook.
-What it needs is a label, read access, and an application it can boot on its own.
+Your project is connected through **GitHub Actions**: one workflow file, two secrets and one variable in your
+repository. From then on, adding the label `to be test` to a pull request sends a signed request to PRQA, which tests
+the PR and posts the verdict to Discord.
 
-### 1. On GitHub (the tested repository)
+```
+your repository                                  PRQA host
+───────────────                                  ─────────
+PR labelled "to be test"
+  └─ .github/workflows/prqa-to-be-test.yml ──►  POST https://<prqa-host>/webhook/prqa/actions
+       signed (HMAC-SHA256), no checkout,         verifies signature, repository, head SHA
+       no PR code executed, no token scope        └─ tests the PR ─► Discord
+```
+
+### Step 1 · Ask the PRQA operator for a connection
+
+The operator runs, on the PRQA host:
+
+```bash
+python3 scripts/setup/prqa_connect_repository.py connect OWNER/REPO \
+    --webhook-url https://<prqa-host>/webhook/prqa/actions --register-repository
+```
+
+and hands you three things: the **workflow file** (`runs/repo-connection-packages/OWNER__REPO/.github/workflows/prqa-to-be-test.yml`),
+the **connection id** (`prqa_c_…`, not secret) and the **signing secret** (sent piped, never pasted in chat).
+
+### Step 2 · Add the secrets and the variable
+
+Repository → **Settings → Secrets and variables → Actions**, or with `gh`:
+
+```bash
+# the operator pipes the secret straight into GitHub, it is never displayed
+python3 scripts/setup/prqa_connect_repository.py export-secret OWNER/REPO | gh secret set PRQA_WEBHOOK_SECRET --repo OWNER/REPO
+gh secret set   PRQA_WEBHOOK_URL   --repo OWNER/REPO          # paste https://<prqa-host>/webhook/prqa/actions
+gh variable set PRQA_CONNECTION_ID --repo OWNER/REPO --body prqa_c_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+| Name | Kind | Value |
+|---|---|---|
+| `PRQA_WEBHOOK_SECRET` | secret | signing secret of this connection |
+| `PRQA_WEBHOOK_URL` | secret | the PRQA receiver URL (kept secret so the host stays private) |
+| `PRQA_CONNECTION_ID` | variable | `prqa_c_…` |
+
+### Step 3 · Commit the workflow
+
+Commit the file from step 1 to your default branch as `.github/workflows/prqa-to-be-test.yml`, through a normal
+reviewed pull request. Its shape:
+
+```yaml
+name: PRQA · to be test
+on:
+  pull_request:
+    types: [opened, reopened, labeled, synchronize, ready_for_review]
+permissions: {}                     # the job gets no GitHub token scope
+concurrency:
+  group: prqa-to-be-test-${{ github.event.pull_request.number }}
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'OWNER/REPO' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'to be test')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch to PRQA (signed webhook, no checkout)
+        env:
+          PRQA_WEBHOOK_URL:    ${{ secrets.PRQA_WEBHOOK_URL }}
+          PRQA_WEBHOOK_SECRET: ${{ secrets.PRQA_WEBHOOK_SECRET }}
+          PRQA_CONNECTION_ID:  ${{ vars.PRQA_CONNECTION_ID }}
+          PRQA_EXPECTED_REPOSITORY: OWNER/REPO
+        run: |
+          python3 -I - <<'__HEREDOC__'
+          # embedded PRQA client (generated): reads the event, signs it, POSTs it
+          __HEREDOC__
+```
+
+Use the generated file unchanged; it embeds the client verbatim (`scripts/clients/prqa_to_be_test_client.py`).
+
+### Step 4 · Create the label and try it
 
 ```bash
 gh label create "to be test" --repo OWNER/REPO --color 0E8A16 --description "Request an automated PRQA run"
 ```
 
-| Requirement | Why |
+Add the label to a pull request. The Actions job finishes in seconds with **PRQA dispatch accepted**: the run has
+started, not passed. The verdict arrives in Discord.
+
+| Event on a PR | Starts a run? |
 |---|---|
-| The label **`to be test`** exists (exact, case-sensitive) | It is the only trigger. Removing it stops new runs; it does not cancel a running one |
-| The `gh` account on the PRQA host can read the repository | Discovery lists open PRs with `gh api`. For a **private** repository also put a read-only `GITHUB_TOKEN` (fine-grained: *Contents: read*, *Pull requests: read*) in `~/.config/prqa/secrets.env` for the pinned checkout |
-| PRs are **open**, **not drafts**, from a branch of the **same repository** (forks are ignored) and target an allowed base (default `main`) | Eligibility rules, checked again just before execution |
+| Label `to be test` added (exact, case-sensitive), or PR opened with it | yes |
+| New commit pushed, PR reopened or marked ready while labelled | yes (one run per head commit) |
+| Same commit labelled again, label removed, draft, closed, fork PR | no |
 
-One run per head commit: pushing a new commit to a labelled PR triggers a new run, re-labelling the same commit does not.
+### What your project must provide
 
-### 2. In the code of the tested repository
-
-The disposable environment is built from the PR's exact commit, so the application must be able to start from source
-with nothing but generated settings:
+PRQA builds a disposable copy of your API from the PR's exact commit, so it must start from source with generated
+settings only:
 
 | Contract | Detail |
 |---|---|
-| `backend/Dockerfile` | Only `backend/` is exported (`git archive`). The image's default command serves the API on **port 8000** |
-| `GET /health` → 200 and OpenAPI at **`/api/v1/openapi.json`** | Used to wait for readiness and to tell the agent which endpoints exist |
-| Settings from **environment variables** only | PRQA generates `DATABASE_URL`, `SECRET_KEY`, … per run. A committed `backend/.env` makes the run refuse |
-| Migrations run inside the image against an **empty Postgres 16** (`alembic upgrade head`) | Redis 7 is available when the profile asks for it |
-| Runs as a **non-root** user (uid 65534) on a **read-only** filesystem | Writable: `/tmp` plus the tmpfs paths declared in the profile |
-| Works **without outbound network** | The API has no egress; external services (AI, storage, mail) must fail gracefully |
+| `backend/Dockerfile` | Only `backend/` is exported. The image's default command serves the API on **port 8000** |
+| `GET /health` → 200, OpenAPI at **`/api/v1/openapi.json`** | Readiness check and the endpoint list the tests are planned from |
+| Settings from **environment variables** | PRQA generates `DATABASE_URL`, `SECRET_KEY`, … per run; a committed `backend/.env` makes the run refuse |
+| Migrations against an **empty Postgres 16** (`alembic upgrade head`) | Redis 7 is available on request |
+| **Non-root** (uid 65534), **read-only** filesystem | Writable: `/tmp` plus declared tmpfs paths |
+| No outbound network | External services (AI, storage, mail) must fail gracefully |
 
-### 3. On the PRQA host (register the repository)
+For a private repository the operator also needs a read-only `GITHUB_TOKEN` (*Contents: read*, *Pull requests:
+read*) to fetch the PR's commit.
 
-Three entries, all in this repository:
+### Operator checklist (PRQA host)
 
-```python
-# scripts/pipeline/prqa_run_single_pr.py
-PROJECTS = {
-    "OWNER/REPO": {"slug": "repo", "env_profile": "repo", "bases": ("main",), "private": False},
-}
-DEFAULT_REPO = "OWNER/REPO"          # or Environment=PRQA_TARGET_REPO=OWNER/REPO in deploy/systemd/prqa-n8n-bridge.service
+| Item | Why |
+|---|---|
+| Public **HTTPS** route to `POST /webhook/prqa/actions` only (reverse proxy or tunnel) | GitHub-hosted runners cannot reach a private machine. Never expose the n8n editor, the worker or the proxies |
+| n8n workflow **PRQA 01 · GitHub Webhook Receiver** active | Receives the signed requests |
+| `AUTOMATION_MODE` allows execution | In `review_only`, requests are verified and recorded but not executed |
+| An environment profile for the project in `scripts/pipeline/prqa_disposable_env.py` | Database, migrations and settings of that application |
 
-# scripts/pipeline/prqa_disposable_env.py
-PROFILES = {
-    "repo": {"db": "repo", "app_env": _repo_env, "redis": False,
-             "migrate": "alembic upgrade head", "seed": None, "api_tmpfs": []},
-}
-```
-
-```yaml
-# config/repositories.yaml
-- full_name: OWNER/REPO
-  kind: real
-  default_branch: main
-  allowed_events: [labeled]
-  api: { base_url: "http://prqa-target-api:8000", openapi_path: "/api/v1/openapi.json" }
-  max_runtime_minutes: 90
-```
-
-`_repo_env` returns the application's environment file from the generated database password and secret key (see
-`_amenly_env` for a complete example). Then check it end to end without running any test:
-
-```bash
-make preview PR=<number>      # boots the environment, builds and gates the prompt, runs no test
-python3 scripts/pipeline/prqa_run_single_pr.py cleanup --run-dir <run dir it printed>   # tear it down
-```
-
-The label pipeline serves one repository at a time (`DEFAULT_REPO`). A push-based alternative through GitHub Actions
-and a public HTTPS webhook is described in [docs/REPOSITORY_CONNECTION_SETUP.md](docs/REPOSITORY_CONNECTION_SETUP.md).
+Full reference (payload, signature, response codes, rotation and revocation):
+[docs/REPOSITORY_CONNECTION_SETUP.md](docs/REPOSITORY_CONNECTION_SETUP.md).
 
 ## Configuration
 

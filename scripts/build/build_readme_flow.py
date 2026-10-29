@@ -3,7 +3,7 @@
 
 Pure SVG + CSS/SMIL (no JavaScript), so it animates inside GitHub's README image renderer. One loop shows a run
 travelling through the eight main stages; the log line under the stages follows the packet. Values are from a
-recorded run (Kiramido1/Amenly-Product PR #2, Claude Code).
+recorded run (one pull request, Claude Code).
 
     python3 scripts/build/build_readme_flow.py
 """
@@ -24,7 +24,7 @@ ROW_Y = [92, 252]
 STAGES = [
     ("Label", "to be test on a PR", "gh · PR #2 labelled ‘to be test’ · head 292ad89"),
     ("Discover", "n8n checks every minute", "n8n → POST /stage/discover · eligible: [#2]"),
-    ("Claim", "once per PR head SHA", "claimed Amenly-Product#2@292ad89 · run state locked"),
+    ("Claim", "once per PR head SHA", "claimed OWNER/REPO#2@292ad89 · run state locked"),
     ("Prepare", "disposable API + Postgres", "disposable env up · OpenAPI loaded · identity probe ok"),
     ("Prompt", "Groq · 3 staged calls", "Groq: scope ✓  coverage ✓  sections ✓ · within 8k TPM"),
     ("Gate", "rubric ≥ 85 · hard fails", "quality gate 98 / 85 → ACCEPTED · hard fails: none"),

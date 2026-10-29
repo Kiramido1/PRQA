@@ -1,6 +1,6 @@
 <!-- PRQA workflow simulation overlay. Injected into system-architecture.html by scripts/build/inject_diagram_simulation.py.
      Self-contained: no network, no storage beyond an optional speed preference. Values come from the recorded run of
-     Kiramido1/Amenly-Product PR #2 @ 292ad89 (Claude Code); timings are compressed for playback. -->
+     one pull request (PR #2 @ 292ad89, Claude Code); timings are compressed for playback. -->
 <style id="prqa-sim-style">
   :root {
     --sim-bg: rgba(13, 17, 28, .94); --sim-fg: #e6e9f2; --sim-muted: #8a93a8; --sim-line: rgba(255,255,255,.09);
@@ -152,7 +152,7 @@
         act: [["on", "n8n"], ["log", "n8n · Every Minute tick", "t"], ...chain("POST /stage/discover"), ["stages-poller", "discover"], ["poller-github", "gh api /pulls"],
               ["poller-github", "PR #2 labelled", true], ["stages-poller", null, true], ["log", "eligible: [2] · head 292ad896", "ok"], ...back("next: claim #2")] },
       { s: 2, title: "Claim", call: "POST /stage/claim", cap: "The run key (PR, SHA, policy) is reserved under the state lock, so the same commit is never tested twice.",
-        act: [...chain("POST /stage/claim"), ["stages-store", "flock · claim"], ["on", "store"], ["log", "claimed Kiramido1/Amenly-Product#2@292ad896:auto-v1", "ok"], ...back("claimed")] },
+        act: [...chain("POST /stage/claim"), ["stages-store", "flock · claim"], ["on", "store"], ["log", "claimed OWNER/REPO#2@292ad896:auto-v1", "ok"], ...back("claimed")] },
       { s: 3, title: "Prepare", call: "POST /stage/prepare", cap: "A disposable copy of the PR's API and Postgres starts at the exact head SHA; PRQA reads its OpenAPI spec and builds the prompt context.",
         act: [...chain("POST /stage/prepare"), ["stages-env", "compose up @292ad89"], ["up", "env"], ["log", "disposable env up · OpenAPI loaded · identity probe ok", "ok"],
               ...back("groq request · wait_s 0")] },
@@ -167,7 +167,7 @@
         act: [["log", "n8n · Wait 30s", "t"], ...chain("POST /stage/poll"), ...back("running · waited 210s"), ["log", "poll → running · waited 210s", "warn"], ["log", "n8n · Wait 30s", "t"], ...chain("POST /stage/poll"), ...back("terminal · succeeded"),
               ["log", "job finished · succeeded", "ok"]] },
       { s: 9, title: "Finalize · report + Discord", call: "POST /stage/finalize", cap: "report.md and qa-result.json are written, the disposable environment is destroyed, and the verdict goes to Discord.",
-        act: [...chain("POST /stage/finalize"), ["stages-store", "report.md"], ["log", "report: runs/prqa-local-pr-runs/amenly-pr-2-292ad896…/report.md", "info"],
+        act: [...chain("POST /stage/finalize"), ["stages-store", "report.md"], ["log", "report: runs/prqa-local-pr-runs/pr-2-292ad896…/report.md", "info"],
               ["stages-env", "teardown"], ["down", "env"], ["log", "cleanup ok · env destroyed", "t"], ["stages-discord", "3 messages"], ["on", "discord"],
               ["log", "discord: delivered (3/3)", "ok"], ["log", "verdict FAIL · 14 pass · 11 fail · 5 n/a · 11 defects", "bad"], ...back("executed"), ["result"]] },
     ];
