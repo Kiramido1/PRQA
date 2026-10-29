@@ -689,6 +689,8 @@ class Handler(BaseHTTPRequestHandler):
             if settled["done"]:
                 return
             settled["done"] = True
+            with self.tokens._lock:                  # free the slot too: the client's next request must not see this one in flight
+                tok.in_flight -= 1
             if tok.halt_on_error and settled["outcome"] != "ok":
                 with self.tokens._lock:              # no client-side retry or continuation can reach the upstream again
                     tok.revoked = True
@@ -789,9 +791,7 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
         finally:
-            settle()                                                   # transport errors: reservation kept
-            with self.tokens._lock:
-                tok.in_flight -= 1
+            settle()                                                   # transport errors: reservation kept; also frees the slot
             if conn is not None:
                 try:
                     conn.close()
