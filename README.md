@@ -108,7 +108,79 @@ python3 scripts/setup/prqa_configure_secret.py discord --send-test
 make run                                                   # creates compose/.env on first run
 ```
 
-To connect another repository, see [docs/REPOSITORY_CONNECTION_SETUP.md](docs/REPOSITORY_CONNECTION_SETUP.md).
+Next, prepare the repository you want tested: [Preparing the repository under test](#preparing-the-repository-under-test).
+
+## Preparing the repository under test
+
+PRQA **pulls** from GitHub: nothing is installed in the tested repository, no workflow file, no secret, no webhook.
+What it needs is a label, read access, and an application it can boot on its own.
+
+### 1. On GitHub (the tested repository)
+
+```bash
+gh label create "to be test" --repo OWNER/REPO --color 0E8A16 --description "Request an automated PRQA run"
+```
+
+| Requirement | Why |
+|---|---|
+| The label **`to be test`** exists (exact, case-sensitive) | It is the only trigger. Removing it stops new runs; it does not cancel a running one |
+| The `gh` account on the PRQA host can read the repository | Discovery lists open PRs with `gh api`. For a **private** repository also put a read-only `GITHUB_TOKEN` (fine-grained: *Contents: read*, *Pull requests: read*) in `~/.config/prqa/secrets.env` for the pinned checkout |
+| PRs are **open**, **not drafts**, from a branch of the **same repository** (forks are ignored) and target an allowed base (default `main`) | Eligibility rules, checked again just before execution |
+
+One run per head commit: pushing a new commit to a labelled PR triggers a new run, re-labelling the same commit does not.
+
+### 2. In the code of the tested repository
+
+The disposable environment is built from the PR's exact commit, so the application must be able to start from source
+with nothing but generated settings:
+
+| Contract | Detail |
+|---|---|
+| `backend/Dockerfile` | Only `backend/` is exported (`git archive`). The image's default command serves the API on **port 8000** |
+| `GET /health` → 200 and OpenAPI at **`/api/v1/openapi.json`** | Used to wait for readiness and to tell the agent which endpoints exist |
+| Settings from **environment variables** only | PRQA generates `DATABASE_URL`, `SECRET_KEY`, … per run. A committed `backend/.env` makes the run refuse |
+| Migrations run inside the image against an **empty Postgres 16** (`alembic upgrade head`) | Redis 7 is available when the profile asks for it |
+| Runs as a **non-root** user (uid 65534) on a **read-only** filesystem | Writable: `/tmp` plus the tmpfs paths declared in the profile |
+| Works **without outbound network** | The API has no egress; external services (AI, storage, mail) must fail gracefully |
+
+### 3. On the PRQA host (register the repository)
+
+Three entries, all in this repository:
+
+```python
+# scripts/pipeline/prqa_run_single_pr.py
+PROJECTS = {
+    "OWNER/REPO": {"slug": "repo", "env_profile": "repo", "bases": ("main",), "private": False},
+}
+DEFAULT_REPO = "OWNER/REPO"          # or Environment=PRQA_TARGET_REPO=OWNER/REPO in deploy/systemd/prqa-n8n-bridge.service
+
+# scripts/pipeline/prqa_disposable_env.py
+PROFILES = {
+    "repo": {"db": "repo", "app_env": _repo_env, "redis": False,
+             "migrate": "alembic upgrade head", "seed": None, "api_tmpfs": []},
+}
+```
+
+```yaml
+# config/repositories.yaml
+- full_name: OWNER/REPO
+  kind: real
+  default_branch: main
+  allowed_events: [labeled]
+  api: { base_url: "http://prqa-target-api:8000", openapi_path: "/api/v1/openapi.json" }
+  max_runtime_minutes: 90
+```
+
+`_repo_env` returns the application's environment file from the generated database password and secret key (see
+`_amenly_env` for a complete example). Then check it end to end without running any test:
+
+```bash
+make preview PR=<number>      # boots the environment, builds and gates the prompt, runs no test
+python3 scripts/pipeline/prqa_run_single_pr.py cleanup --run-dir <run dir it printed>   # tear it down
+```
+
+The label pipeline serves one repository at a time (`DEFAULT_REPO`). A push-based alternative through GitHub Actions
+and a public HTTPS webhook is described in [docs/REPOSITORY_CONNECTION_SETUP.md](docs/REPOSITORY_CONNECTION_SETUP.md).
 
 ## Configuration
 
@@ -120,7 +192,6 @@ Secrets never do.
 | `PRQA_OPENCODE_EXECUTOR` | `local` | Where the agent runs: on this machine under bubblewrap |
 | `PRQA_LOCAL_ENGINE` | `claude` | Agent CLI used by the executor |
 | `PRQA_LOCAL_MODEL` | `claude-sonnet-5-5` | Model passed to the agent |
-| `PRQA_TRIGGER_LABEL` | `to be test` | Label that requests a run |
 | `PRQA_DEFAULT_TEST_LEVEL` | `standard` | `smoke` · `standard` · `comprehensive` · `security` |
 | `PRQA_BUDGET_TOKENS_PER_MINUTE` | `8000` | Shared provider budget enforced by the model proxy |
 
