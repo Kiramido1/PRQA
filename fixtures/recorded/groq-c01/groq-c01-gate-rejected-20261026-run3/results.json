@@ -1,0 +1,70 @@
+{
+  "provider": "groq",
+  "endpoint_host": "https://api.groq.com/openai/v1",
+  "model_slug": "openai/gpt-oss-120b",
+  "n8n_retry_policy_note": "n8n workflow 03 generation node: single attempt (retryOnFail=false), timeout 360s, failure -> deterministic fallback; this runner also makes one attempt per request and never retries",
+  "stopped_reasons": [],
+  "usage_totals": {
+    "prompt_tokens": 4125,
+    "completion_tokens": 2091,
+    "total_tokens": 6216,
+    "requests": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "results": [
+    {
+      "cid": "C01-clear-behaviour",
+      "provider": "groq",
+      "model_slug": "openai/gpt-oss-120b",
+      "http_status": 200,
+      "seconds": 5.1,
+      "request": "ok",
+      "model_returned": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 4125,
+        "completion_tokens": 2091,
+        "total_tokens": 6216
+      },
+      "gate_valid": false,
+      "would_source": "would_fallback",
+      "outcome": "gate_rejected",
+      "version_status": "current",
+      "gate_errors": [
+        "unsupported claim in an untagged summary/requirement line (line 3): validation claim 'Validate' for status (the diff shows no validation for it; a field's existence is not its validation) \u2014 a field's existence is not its validation; cite the diff lines that enforce it, tag a description-only rule [STATED: PR description], or word it as a hypothesis (verify)",
+        "unsupported [FACT] claim (line 21): validation claim 'Request body must contain' for reason (the diff shows no validation for it; a field's existence is not its validation)",
+        "unexecutable request in an executable scenario: line 52 (Required): jq reads orders.json, which no request in the document writes (add the curl that saves it with -o, in section 4 or this Request: line)",
+        "unexecutable request in an executable scenario: line 57 (Required): jq reads cancelled_orders.json, which no request in the document writes (add the curl that saves it with -o, in section 4 or this Request: line)"
+      ],
+      "gate_warnings": [
+        "provenance mismatch (line 26): status 200 tagged [STATED: PR description] but the description does not state it (cite OpenAPI or the diff on its own line)",
+        "unverified claim: line 31 (narrative): identifier `cancellation_reason` not in the PR evidence",
+        "unverified claim: line 53 (Required): identifier `cancellation_reason` not in the PR evidence",
+        "unverified claim: line 65 (Blocked): identifier `cancellation_reason` not in the PR evidence",
+        "unverified claim: line 66 (Blocked): identifier `cancellation_reason` not in the PR evidence",
+        "unverified claim: line 70 (narrative): identifier `Authorization` not in the PR evidence"
+      ],
+      "quality_score": 70.0,
+      "dimensions": {
+        "scope_accuracy": 2,
+        "business_rules": 5,
+        "test_coverage": 3.0,
+        "executability": 5,
+        "expected_results": 3,
+        "context_grounding": 1,
+        "ambiguity_handling": 5,
+        "pr_specificity": 3,
+        "output_structure": 4,
+        "safety_isolation": 4
+      },
+      "hard_fails": [
+        "HF-FABRICATED-FACT: unsupported [FACT:] claim (endpoint/param/identifier/limit/status asserted as fact): unsupported [FACT] claim (line 21): validation claim 'Request body must contain' for reason (the diff shows no validation for it; a field's existence is not its"
+      ],
+      "human_flags": [
+        "HR-SEMANTIC-REQUIREMENT: paraphrase coverage cannot be keyword-locked; gate partial/missing may be a false negative",
+        "HR-AMBIGUITY-SENSIBLE: whether Conditional scenarios are semantically sensible is model self-review + human review"
+      ]
+    }
+  ]
+}

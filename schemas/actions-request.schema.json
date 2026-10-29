@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prqa.example.test/schemas/actions-request/1.0/actions-request.schema.json",
+  "title": "PR QA Pilot — test request sent by the GitHub Actions workflow (POST /webhook/prqa/actions)",
+  "description": "Body signed by the Actions client: X-PRQA-Signature = sha256=HMAC-SHA256(PRQA_WEBHOOK_SECRET, '<X-PRQA-Timestamp>.<raw body>'). The pull_request object mirrors the subset of the GitHub pull_request webhook payload the receiver already accepts. Every value is UNTRUSTED until the worker has validated it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "repository", "pull_request", "request", "actions"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "source": { "enum": ["github_actions", "local_poller"] },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["full_name"],
+      "properties": {
+        "full_name": { "type": "string", "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$" },
+        "html_url": { "type": "string", "maxLength": 300 },
+        "default_branch": { "type": "string", "maxLength": 255 },
+        "private": { "type": "boolean" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "title", "state", "html_url", "head", "base"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+        "title": { "type": "string", "maxLength": 1000 },
+        "body": { "type": ["string", "null"], "maxLength": 8000 },
+        "state": { "enum": ["open", "closed"] },
+        "draft": { "type": "boolean" },
+        "html_url": { "type": "string", "maxLength": 500 },
+        "labelled_by": { "type": ["string", "null"], "maxLength": 100, "description": "login that added the label, resolved by the poller from the GitHub issue-events API (not authenticated by PRQA)" },
+        "user": { "type": "object", "additionalProperties": false, "properties": { "login": { "type": "string", "maxLength": 100 } } },
+        "labels": { "type": "array", "maxItems": 100, "items": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string", "maxLength": 100 } } } },
+        "head": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "sha"],
+          "properties": {
+            "ref": { "type": "string", "maxLength": 255 },
+            "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "repo": { "type": ["object", "null"], "additionalProperties": false, "properties": { "full_name": { "type": "string", "maxLength": 140 }, "fork": { "type": "boolean" } } }
+          }
+        },
+        "base": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "sha"],
+          "properties": {
+            "ref": { "type": "string", "maxLength": 255 },
+            "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "repo": { "type": ["object", "null"], "additionalProperties": false, "properties": { "full_name": { "type": "string", "maxLength": 140 } } }
+          }
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["test_level", "trigger"],
+      "properties": {
+        "test_level": { "enum": ["smoke", "standard", "comprehensive", "security"] },
+        "trigger": { "enum": ["label", "workflow_dispatch", "unlabel"], "description": "unlabel = lifecycle: cancel active jobs of the PR (local poller observed the label removed or the PR closed); never starts a job" },
+        "label": { "type": "string", "maxLength": 100, "description": "The opt-in label on the PR (default 'to be test'); informational, the level comes from test_level" },
+        "requested_by": { "type": "string", "maxLength": 100 },
+        "force_rerun": { "type": "boolean", "description": "true appends the Actions run id to the idempotency key so an already-tested head SHA can be re-requested" }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id"],
+      "properties": {
+        "run_id": { "type": "string", "pattern": "^[0-9]{1,20}$" },
+        "run_attempt": { "type": "string", "pattern": "^[0-9]{1,5}$" },
+        "run_url": { "type": "string", "maxLength": 500 },
+        "workflow": { "type": "string", "maxLength": 200 },
+        "event_name": { "type": "string", "maxLength": 50 },
+        "client_version": { "type": "string", "maxLength": 20 }
+      }
+    }
+  }
+}

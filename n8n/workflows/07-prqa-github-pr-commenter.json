@@ -1,0 +1,334 @@
+{
+  "id": "PrqaGithubCommen",
+  "name": "PRQA 07 · GitHub PR Commenter",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 07 · GitHub PR Commenter\nPosts the rendered Markdown comment to `issues/{pr}/comments`. **Real** GitHub only when `endpoints.github_comment_mode == 'real'` (requires `AUTOMATION_MODE=live` + `REAL_GITHUB_REPORTING_ENABLED=true`) *and* `GITHUB_TOKEN` is set. Otherwise the comment goes to the mock GitHub sink. The comment carries `<!-- prqa:job:<id> -->` for idempotent updates.",
+        "height": 170,
+        "width": 880,
+        "color": 1
+      },
+      "id": "e3b42671-ef11-5345-a6bc-2edda1882afb",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "1ffb37e5-8125-58ab-b939-8ae0e932c9e0",
+      "name": "Comment Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0d3eb7c5-6538-594b-9c16-52699476fe95",
+              "leftValue": "={{ $json.endpoints.github_comment_mode }}",
+              "rightValue": "real",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "3542ec60-aedd-55cb-957f-75870b1097a3",
+              "leftValue": "={{ $env.GITHUB_TOKEN || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2397afc9-c553-5c79-8771-e40e7081b9ab",
+      "name": "Real GitHub Reporting Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        300
+      ],
+      "notes": "false in Phase 1",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.job_seed.repository }}/issues/{{ $json.job_seed.pr.number }}/comments",
+        "authentication": "none",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "prqa-n8n/0.1.0"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: $json.report.github_comment_markdown }) }}"
+      },
+      "id": "a4be1ce8-6456-53fe-984e-d98f01564e5e",
+      "name": "Post PR Comment (REAL GitHub API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        180
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.endpoints.mock_services_url }}/github/repos/{{ $json.job_seed.repository }}/issues/{{ $json.job_seed.pr.number }}/comments",
+        "authentication": "none",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-PRQA-Job",
+              "value": "={{ $json.job.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: $json.report.github_comment_markdown }) }}"
+      },
+      "id": "d05cbff0-51fa-508c-a478-d194423f7c35",
+      "name": "Post to Mock GitHub Sink (dry-run)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        420
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Comment Input').first().json;\nconst resp = $input.first().json;\nconst code = Number(resp.statusCode || 0);\nlet mode = 'mock';\ntry { mode = $('Post to Mock GitHub Sink (dry-run)').first().json ? 'mock' : 'real'; } catch (e) { mode = 'real'; }\nconst body = resp.body || {};\nreturn [{ json: { ...input, github_comment: { mode, status_code: code, delivered: code >= 200 && code < 300, status: (code >= 200 && code < 300) ? `${mode}_delivered` : `${mode}_failed`, comment_url: body.html_url || null } } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "0a968d16-996d-50a0-85bf-576474855041",
+      "name": "Attach GitHub Comment Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/jobs/{{ $json.job.id }}/notification",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: \"github_comment\", status: $json.github_comment.status, detail: { status_code: $json.github_comment.status_code, mode: $json.github_comment.mode, url: $json.github_comment.comment_url } }) }}"
+      },
+      "id": "1a1ce12d-e899-5eeb-9c48-0473b32e579e",
+      "name": "Record Notification Status (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Attach GitHub Comment Status').first().json }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "94456edb-b856-53f3-a64c-5db71a62a946",
+      "name": "Return Pipeline Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Comment Input": {
+      "main": [
+        [
+          {
+            "node": "Real GitHub Reporting Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Real GitHub Reporting Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Post PR Comment (REAL GitHub API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post to Mock GitHub Sink (dry-run)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post PR Comment (REAL GitHub API)": {
+      "main": [
+        [
+          {
+            "node": "Attach GitHub Comment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Mock GitHub Sink (dry-run)": {
+      "main": [
+        [
+          {
+            "node": "Attach GitHub Comment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach GitHub Comment Status": {
+      "main": [
+        [
+          {
+            "node": "Record Notification Status (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Notification Status (worker)": {
+      "main": [
+        [
+          {
+            "node": "Return Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "651cebf2-bfee-5e6a-a8c6-159d98f2fed0"
+}

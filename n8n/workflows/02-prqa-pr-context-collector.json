@@ -1,0 +1,366 @@
+{
+  "id": "PrqaPrContextCol",
+  "name": "PRQA 02 · PR Context Collector",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 02 · PR Context Collector\nReads PR metadata, changed files and the unified diff from the GitHub API base handed over by the worker (`endpoints.github_api_base`: **mock** in review-only, real only in live mode), then asks the worker to build the sanitized, redacted, size-limited context package (`POST /context/build`). PR text is labelled UNTRUSTED.",
+        "height": 170,
+        "width": 820,
+        "color": 1
+      },
+      "id": "36c71fbf-6d9b-5e43-b58e-e54a23e046a7",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "a9ba44b8-5b7e-5c03-8043-410f29a42f4f",
+      "name": "Context Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7a0d12b3-599f-52ee-a5f0-388a98e5b7ef",
+              "name": "github_api_base",
+              "value": "={{ $json.endpoints.github_api_base }}",
+              "type": "string"
+            },
+            {
+              "id": "9edae1a2-fb65-5897-bb48-6a8547190338",
+              "name": "github_api_mode",
+              "value": "={{ $json.endpoints.github_api_mode }}",
+              "type": "string"
+            },
+            {
+              "id": "7441e56a-af18-5b7a-99ea-9d3ad1ae42d9",
+              "name": "github_auth_header",
+              "value": "={{ $json.endpoints.github_api_mode === 'real' && $env.GITHUB_TOKEN ? 'Bearer ' + $env.GITHUB_TOKEN : 'Bearer mock-token-review-only' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "d0c45cf1-e905-5f40-a1cc-f62423311939",
+      "name": "Resolve GitHub API Endpoint",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        300
+      ],
+      "notes": "mock in review-only; real token only in live mode",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Resolve GitHub API Endpoint').first().json.github_api_base }}/repos/{{ $('Resolve GitHub API Endpoint').first().json.job_seed.repository }}/pulls/{{ $('Resolve GitHub API Endpoint').first().json.job_seed.pr.number }}",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Resolve GitHub API Endpoint').first().json.github_auth_header }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "prqa-n8n/0.1.0"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        }
+      },
+      "id": "b8a40e42-0cc4-5da9-9e96-138d44f3a46e",
+      "name": "Fetch PR Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Resolve GitHub API Endpoint').first().json.github_api_base }}/repos/{{ $('Resolve GitHub API Endpoint').first().json.job_seed.repository }}/pulls/{{ $('Resolve GitHub API Endpoint').first().json.job_seed.pr.number }}/files?per_page=100",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Resolve GitHub API Endpoint').first().json.github_auth_header }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "prqa-n8n/0.1.0"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        }
+      },
+      "id": "5dbed94b-301f-5f07-b9d7-8d3830f664a2",
+      "name": "Fetch Changed Files",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Resolve GitHub API Endpoint').first().json.github_api_base }}/repos/{{ $('Resolve GitHub API Endpoint').first().json.job_seed.repository }}/pulls/{{ $('Resolve GitHub API Endpoint').first().json.job_seed.pr.number }}",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.diff"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Resolve GitHub API Endpoint').first().json.github_auth_header }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "prqa-n8n/0.1.0"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        }
+      },
+      "id": "c100764e-212e-52b1-baff-2e6a80fcee8a",
+      "name": "Fetch Unified Diff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine the three GitHub responses into one object for the worker's sanitizer.\nconst base = $('Resolve GitHub API Endpoint').first().json;\nconst pr = $('Fetch PR Metadata').first().json;\nconst files = $('Fetch Changed Files').all().map(i => i.json);\nconst diffItem = $('Fetch Unified Diff').first().json;\nconst diff = typeof diffItem.data === 'string' ? diffItem.data : JSON.stringify(diffItem);\nreturn [{ json: {\n  repository: base.job_seed.repository,\n  synthetic: Boolean(base.job_seed.synthetic),\n  pr,\n  files: Array.isArray(files) && files.length === 1 && Array.isArray(files[0]) ? files[0] : files,\n  diff,\n  github_api_mode: base.github_api_mode,\n  mock_response: String(pr._mock || false) === 'true',\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "1d429b9f-66f1-539d-a96a-e18342692a32",
+      "name": "Assemble Raw PR Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/context/build",
+        "authentication": "none",
+        "options": {
+          "timeout": 60000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "80084d60-8ca6-504f-b54c-ee3c6a3ed34c",
+      "name": "Sanitize & Build Context Package (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        300
+      ],
+      "notes": "redaction, truncation, changed OpenAPI operations, context_sha256",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Context Input').first().json;\nconst built = $input.first().json;\nreturn [{ json: { ...input, context: built.context, context_source: $('Assemble Raw PR Data').first().json.github_api_mode } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "7e78ffef-98cd-50d7-b962-ae59b98f9385",
+      "name": "Attach Context to Pipeline Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Context Input": {
+      "main": [
+        [
+          {
+            "node": "Resolve GitHub API Endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve GitHub API Endpoint": {
+      "main": [
+        [
+          {
+            "node": "Fetch PR Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PR Metadata": {
+      "main": [
+        [
+          {
+            "node": "Fetch Changed Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Changed Files": {
+      "main": [
+        [
+          {
+            "node": "Fetch Unified Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Unified Diff": {
+      "main": [
+        [
+          {
+            "node": "Assemble Raw PR Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Raw PR Data": {
+      "main": [
+        [
+          {
+            "node": "Sanitize & Build Context Package (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize & Build Context Package (worker)": {
+      "main": [
+        [
+          {
+            "node": "Attach Context to Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "fab4dd2d-3312-5676-82de-6eae50dd1034"
+}

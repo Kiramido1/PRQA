@@ -1,0 +1,77 @@
+{
+  "result_version": "1.0",
+  "synthetic": true,
+  "job_id": "synthetic-job-placeholder",
+  "repository": "synthetic-org/sample-orders-api",
+  "pr": {
+    "number": 101,
+    "title": "Add status filter and cancellation reason to orders API (SYNTHETIC)",
+    "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "base_ref": "main",
+    "head_ref": "feature/order-status-filter",
+    "url": "https://github.com/synthetic-org/sample-orders-api/pull/101"
+  },
+  "environment": { "name": "mock", "base_url_redacted": "http://prqa-mocks:8090/target" },
+  "executed_by": {
+    "engine": "mock_executor",
+    "mode": "mock",
+    "model": "none (fixture)",
+    "prompt_source": "fixture",
+    "started_at": "2026-10-21T00:00:00Z",
+    "finished_at": "2026-10-21T00:00:41Z",
+    "duration_ms": 41230
+  },
+  "summary": {
+    "overall_status": "FAIL",
+    "total": 8,
+    "passed": 5,
+    "failed": 1,
+    "blocked": 2,
+    "not_applicable": 0,
+    "executive_summary": "SYNTHETIC FIXTURE — no test was executed. Illustrates one confirmed defect (409 expected, 500 returned on double cancel) and two blocked mutation cases."
+  },
+  "coverage_matrix": [
+    { "area": "Authorization", "planned": 2, "passed": 2, "failed": 0, "blocked": 0, "not_applicable": 0 },
+    { "area": "Status filter", "planned": 2, "passed": 2, "failed": 0, "blocked": 0, "not_applicable": 0 },
+    { "area": "Cancellation", "planned": 3, "passed": 1, "failed": 1, "blocked": 1, "not_applicable": 0 },
+    { "area": "Regression", "planned": 1, "passed": 0, "failed": 0, "blocked": 1, "not_applicable": 0 }
+  ],
+  "test_cases": [
+    { "id": "ORD-AUTH-001", "area": "Authorization", "scenario": "Unauthenticated list returns 401", "endpoint": "GET /v1/orders", "expected": "401", "actual": "401", "status": "PASS", "http_status": 401, "evidence": "evidence/ORD-AUTH-001.txt", "defect_ref": null },
+    { "id": "ORD-AUTH-002", "area": "Authorization", "scenario": "Malformed bearer token rejected", "endpoint": "GET /v1/orders", "expected": "401", "actual": "401", "status": "PASS", "http_status": 401, "evidence": "evidence/ORD-AUTH-002.txt", "defect_ref": null },
+    { "id": "ORD-FLT-001", "area": "Status filter", "scenario": "status=pending returns only pending orders", "endpoint": "GET /v1/orders?status=pending", "expected": "200, every item status=pending", "actual": "200, 3/3 pending", "status": "PASS", "http_status": 200, "evidence": "evidence/ORD-FLT-001.txt", "defect_ref": null },
+    { "id": "ORD-FLT-002", "area": "Status filter", "scenario": "Invalid status value rejected", "endpoint": "GET /v1/orders?status=bogus", "expected": "400 or 422 per contract", "actual": "400 INVALID_QUERY_PARAMETER", "status": "PASS", "http_status": 400, "evidence": "evidence/ORD-FLT-002.txt", "defect_ref": null },
+    { "id": "ORD-CNL-001", "area": "Cancellation", "scenario": "Cancel without reason rejected", "endpoint": "POST /v1/orders/{id}/cancel", "expected": "422 with field=reason", "actual": "422 field=reason", "status": "PASS", "http_status": 422, "evidence": "evidence/ORD-CNL-001.txt", "defect_ref": null },
+    { "id": "ORD-CNL-002", "area": "Cancellation", "scenario": "Cancel already-cancelled order returns 409", "endpoint": "POST /v1/orders/{id}/cancel", "expected": "409 ORDER_ALREADY_CANCELLED", "actual": "500 INTERNAL_ERROR (reproduced 2/2)", "status": "FAIL", "http_status": 500, "evidence": "evidence/ORD-CNL-002.txt", "defect_ref": "DEF-001" },
+    { "id": "ORD-CNL-003", "area": "Cancellation", "scenario": "Cancel pending order persists reason", "endpoint": "POST /v1/orders/{id}/cancel", "expected": "200, cancellation_reason persisted", "actual": "not executed: no disposable fixture order available", "status": "BLOCKED", "http_status": null, "evidence": "evidence/ORD-CNL-003.txt", "defect_ref": null },
+    { "id": "ORD-REG-001", "area": "Regression", "scenario": "GET /v1/orders/{id} schema unchanged", "endpoint": "GET /v1/orders/{id}", "expected": "200, Order schema", "actual": "not executed: no known order id in read-only dataset", "status": "BLOCKED", "http_status": null, "evidence": "evidence/ORD-REG-001.txt", "defect_ref": null }
+  ],
+  "defects": [
+    {
+      "id": "DEF-001",
+      "title": "Cancelling an already-cancelled order returns 500 instead of documented 409",
+      "severity": "P2",
+      "severity_rationale": "Functional defect on a documented error path; workaround exists (client-side state check). SYNTHETIC.",
+      "endpoint": "POST /v1/orders/{orderId}/cancel",
+      "preconditions": "An order in status=cancelled exists for the caller's tenant.",
+      "repro_curl": "curl -sS -X POST -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"reason\":\"duplicate_request\"}' -o /tmp/r.json -w '%{http_code}\\n' \"$BASE_URL/v1/orders/ord_qa_0001/cancel\"",
+      "expected": "409 with error.code=ORDER_ALREADY_CANCELLED (openapi.yaml documents 409)",
+      "actual": "500 with error.code=INTERNAL_ERROR",
+      "http_status": 500,
+      "impact": "Clients cannot distinguish a state conflict from a server fault; retries may be triggered unnecessarily.",
+      "origin": "introduced_by_pr",
+      "test_case_ids": ["ORD-CNL-002"]
+    }
+  ],
+  "blockers": [
+    "No disposable test order was available for positive cancellation; ORD-CNL-003 BLOCKED.",
+    "Read-only dataset exposed no stable order id for ORD-REG-001."
+  ],
+  "regression_summary": "1 regression scenario planned, 0 executed (BLOCKED: no stable fixture).",
+  "recommendation": {
+    "verdict": "FAIL",
+    "rationale": "SYNTHETIC: one confirmed P2 defect within PR scope (DEF-001) and mandatory mutation coverage blocked."
+  },
+  "evidence": { "directory": "prqa-evidence/", "files": ["evidence/ORD-AUTH-001.txt", "evidence/ORD-CNL-002.txt", "qa-report.md"] },
+  "report_markdown": "# QA Report — SYNTHETIC FIXTURE\n\nThis report was not produced by a real test run. It exists so the reporting pipeline can be reviewed.\n\n## A. Executive Summary\n- PR: #101 Add status filter and cancellation reason to orders API (SYNTHETIC)\n- Environment: mock\n- Method: curl-based API testing (simulated)\n- Planned 8 · Passed 5 · Failed 1 · Blocked 2 · N/A 0\n- Recommendation: FAIL\n\n## D. Defect Report\n### DEF-001 (P2) Cancelling an already-cancelled order returns 500 instead of 409\nSee qa-result.json for the sanitized reproduction command.\n"
+}

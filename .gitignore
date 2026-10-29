@@ -1,0 +1,20 @@
+# secrets and generated config
+compose/.env
+config/*.bak-*
+
+# run outputs
+runs/
+
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.archify/
+
+# local tooling output
+.archify/
+*.finalize.json
+*.delivery.json
+*.browser-check.json

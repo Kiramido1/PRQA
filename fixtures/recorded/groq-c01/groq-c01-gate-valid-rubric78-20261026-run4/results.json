@@ -1,0 +1,63 @@
+{
+  "provider": "groq",
+  "endpoint_host": "https://api.groq.com/openai/v1",
+  "model_slug": "openai/gpt-oss-120b",
+  "n8n_retry_policy_note": "n8n workflow 03 generation node: single attempt (retryOnFail=false), timeout 360s, failure -> deterministic fallback; this runner also makes one attempt per request and never retries",
+  "stopped_reasons": [],
+  "usage_totals": {
+    "prompt_tokens": 4210,
+    "completion_tokens": 1790,
+    "total_tokens": 6000,
+    "requests": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "results": [
+    {
+      "cid": "C01-clear-behaviour",
+      "provider": "groq",
+      "model_slug": "openai/gpt-oss-120b",
+      "http_status": 200,
+      "seconds": 4.7,
+      "request": "ok",
+      "model_returned": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 4210,
+        "completion_tokens": 1790,
+        "total_tokens": 6000
+      },
+      "gate_valid": true,
+      "would_source": "llm",
+      "outcome": "usable",
+      "version_status": "current",
+      "gate_errors": [],
+      "gate_warnings": [
+        "unverified claim: line 41 (Required): limit 500 not in the PR evidence",
+        "unverified claim: line 51 (Blocked): identifier `cancellation_reason` not in the PR evidence",
+        "unverified claim: line 52 (Blocked): identifier `cancellation_reason` not in the PR evidence",
+        "unverified claim: line 87 (narrative): identifier `pending`, identifier `paid`, identifier `shipped` not in the PR evidence",
+        "unverified claim: line 88 (narrative): limit 500 not in the PR evidence",
+        "unverified claim: line 89 (narrative): identifier `cancellation_reason` not in the PR evidence"
+      ],
+      "quality_score": 78.0,
+      "dimensions": {
+        "scope_accuracy": 5,
+        "business_rules": 5,
+        "test_coverage": 3.0,
+        "executability": 4,
+        "expected_results": 3,
+        "context_grounding": 3,
+        "ambiguity_handling": 5,
+        "pr_specificity": 3,
+        "output_structure": 4,
+        "safety_isolation": 4
+      },
+      "hard_fails": [],
+      "human_flags": [
+        "HR-SEMANTIC-REQUIREMENT: paraphrase coverage cannot be keyword-locked; gate partial/missing may be a false negative",
+        "HR-AMBIGUITY-SENSIBLE: whether Conditional scenarios are semantically sensible is model self-review + human review"
+      ]
+    }
+  ]
+}

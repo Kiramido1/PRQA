@@ -1,0 +1,19 @@
+{
+  "_synthetic": "SYNTHETIC FIXTURE — an `opened` event without a qa-test label. The receiver must acknowledge it (200 ignored) and never start a job.",
+  "action": "opened",
+  "number": 102,
+  "pull_request": {
+    "number": 102,
+    "title": "Chore: bump dependencies (SYNTHETIC)",
+    "state": "open",
+    "draft": false,
+    "html_url": "https://github.com/synthetic-org/sample-orders-api/pull/102",
+    "user": { "login": "synthetic-dev" },
+    "body": "Routine dependency bump.",
+    "labels": [],
+    "head": { "ref": "chore/deps", "sha": "0000000000000000000000000000000000000102", "repo": { "full_name": "synthetic-org/sample-orders-api", "fork": false } },
+    "base": { "ref": "main", "sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" }
+  },
+  "repository": { "full_name": "synthetic-org/sample-orders-api", "name": "sample-orders-api", "owner": { "login": "synthetic-org" }, "default_branch": "main" },
+  "sender": { "login": "synthetic-dev" }
+}

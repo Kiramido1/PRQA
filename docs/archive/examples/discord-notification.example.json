@@ -1,0 +1,21 @@
+{
+  "username": "PR QA Pilot",
+  "content": "🔴 ILLUSTRATIVE EXAMPLE (not a real run) — QA FAILED for acme-orders PR #42",
+  "allowed_mentions": { "parse": [] },
+  "embeds": [
+    {
+      "title": "QA FAILED — example-org/orders-service #42",
+      "description": "Add status filter and cancellation reason to orders API\nLevel: standard · Environment: staging",
+      "color": 15158332,
+      "fields": [
+        { "name": "Results", "value": "✅ PASS 6 · ❌ FAIL 1 · ⚠️ ERROR 1 · ⛔ BLOCKED 0 · ⏭️ SKIPPED 0", "inline": false },
+        { "name": "Findings", "value": "F-001 · CONFIRMED · S2 · TC-005 Cancel already-cancelled order returns 500 (expected 409)", "inline": false },
+        { "name": "Errors", "value": "TC-007 TIMEOUT after 2 retries — auth check on GET /v1/orders unverified", "inline": false },
+        { "name": "Run ID", "value": "`20261018T143000Z-acme-orders-pr42-a1b2c3d`", "inline": false },
+        { "name": "Report", "value": "runs/20261018T143000Z-acme-orders-pr42-a1b2c3d/report.md", "inline": false }
+      ],
+      "footer": { "text": "plan: manual_chatgpt · approved by qa-reviewer · runner 0.1.0" },
+      "timestamp": "2026-10-18T14:30:41Z"
+    }
+  ]
+}

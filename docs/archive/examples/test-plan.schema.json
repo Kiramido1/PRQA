@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prqa.example.test/schemas/test-plan/1.0/test-plan.schema.json",
+  "title": "PR QA Pilot API Test Plan",
+  "description": "Structural contract for an API test plan (plan_version 1.0). Structural validity is necessary but not sufficient: the runner also applies project policy checks (see docs/AI_TEST_PLAN_SPEC.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan_version",
+    "plan_id",
+    "project_id",
+    "pr",
+    "test_level",
+    "generated_by",
+    "scope_summary",
+    "test_cases"
+  ],
+  "properties": {
+    "plan_version": { "const": "1.0" },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$"
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "pr": { "$ref": "#/$defs/pr" },
+    "test_level": {
+      "enum": ["smoke", "standard", "comprehensive", "security"]
+    },
+    "generated_by": { "$ref": "#/$defs/generatedBy" },
+    "scope_summary": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 4000
+    },
+    "assumptions": {
+      "type": "array",
+      "maxItems": 30,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "out_of_scope": {
+      "type": "array",
+      "maxItems": 30,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "test_cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/testCase" }
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "gitRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9._/-]+$"
+    },
+    "pr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "number", "base_ref", "head_ref", "base_sha", "head_sha"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+        },
+        "number": { "type": "integer", "minimum": 1 },
+        "base_ref": { "$ref": "#/$defs/gitRef" },
+        "head_ref": { "$ref": "#/$defs/gitRef" },
+        "base_sha": { "$ref": "#/$defs/sha" },
+        "head_sha": { "$ref": "#/$defs/sha" }
+      }
+    },
+    "generatedBy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "prompt_version"],
+      "properties": {
+        "provider": {
+          "enum": ["manual_chatgpt", "openai_api", "claude_code_cli", "local_llm", "human"]
+        },
+        "model": { "type": "string", "maxLength": 100 },
+        "prompt_version": {
+          "type": "string",
+          "pattern": "^v[0-9]+(\\.[0-9]+)?$"
+        },
+        "generated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "headerName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,64}$",
+      "not": {
+        "pattern": "^(?i:authorization|cookie|host|proxy-authorization|x-runner-token|x-forwarded-for|x-forwarded-host|x-real-ip|content-length|transfer-encoding)$"
+      }
+    },
+    "scalar": {
+      "type": ["string", "number", "integer", "boolean"]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path"],
+      "properties": {
+        "method": {
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^/[A-Za-z0-9._~!$&'()*+,;=:@%/{}-]*$",
+          "not": {
+            "anyOf": [
+              { "pattern": "\\.\\." },
+              { "pattern": "//" },
+              { "pattern": "(?i)%2e%2e" },
+              { "pattern": "(?i)%2f" }
+            ]
+          }
+        },
+        "path_params": {
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+          "additionalProperties": { "$ref": "#/$defs/scalar" }
+        },
+        "query": {
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": { "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,64}$" },
+          "additionalProperties": {
+            "anyOf": [
+              { "$ref": "#/$defs/scalar" },
+              {
+                "type": "array",
+                "maxItems": 20,
+                "items": { "$ref": "#/$defs/scalar" }
+              }
+            ]
+          }
+        },
+        "headers": {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": { "$ref": "#/$defs/headerName" },
+          "additionalProperties": { "type": "string", "maxLength": 1024 }
+        },
+        "body": {
+          "description": "JSON request body. Serialized size limit (64 KiB) is enforced by the policy validator."
+        }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "path", "op"],
+      "properties": {
+        "target": { "enum": ["body", "header"] },
+        "path": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "For body: JSONPath subset ($, .key, [index]). For header: header name.",
+          "pattern": "^(\\$((\\.[A-Za-z_][A-Za-z0-9_-]*)|(\\[[0-9]+\\]))*|[A-Za-z0-9-]{1,64})$"
+        },
+        "op": {
+          "enum": [
+            "equals",
+            "not_equals",
+            "exists",
+            "not_exists",
+            "type_is",
+            "contains",
+            "matches_regex",
+            "length_eq",
+            "length_gte",
+            "length_lte",
+            "gte",
+            "lte"
+          ]
+        },
+        "value": {},
+        "description": { "type": "string", "maxLength": 300 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "op": { "enum": ["exists", "not_exists"] } } },
+          "then": { "not": { "required": ["value"] } },
+          "else": { "required": ["value"] }
+        },
+        {
+          "if": { "properties": { "op": { "const": "type_is" } } },
+          "then": {
+            "properties": {
+              "value": { "enum": ["string", "number", "integer", "boolean", "array", "object", "null"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "op": { "enum": ["length_eq", "length_gte", "length_lte"] } } },
+          "then": { "properties": { "value": { "type": "integer", "minimum": 0 } } }
+        },
+        {
+          "if": { "properties": { "op": { "enum": ["gte", "lte"] } } },
+          "then": { "properties": { "value": { "type": "number" } } }
+        },
+        {
+          "if": { "properties": { "op": { "const": "matches_regex" } } },
+          "then": { "properties": { "value": { "type": "string", "maxLength": 200 } } }
+        }
+      ]
+    },
+    "httpStatus": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "oneOf": [
+            { "$ref": "#/$defs/httpStatus" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/httpStatus" }
+            }
+          ]
+        },
+        "json_schema": {
+          "type": "object",
+          "description": "Inline JSON Schema for the response body, or {\"$ref\": \"#/components/schemas/<Name>\"} resolved against the project's OpenAPI document."
+        },
+        "assertions": {
+          "type": "array",
+          "maxItems": 25,
+          "items": { "$ref": "#/$defs/assertion" }
+        },
+        "max_duration_ms": { "type": "integer", "minimum": 1, "maximum": 60000 }
+      }
+    },
+    "testCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "purpose",
+        "scope_ref",
+        "category",
+        "priority",
+        "auth_profile",
+        "request",
+        "expect"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^TC-[0-9]{3}$" },
+        "title": { "type": "string", "minLength": 5, "maxLength": 120 },
+        "purpose": { "type": "string", "minLength": 10, "maxLength": 600 },
+        "scope_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Reference to the PR change this case covers, e.g. 'diff:src/orders/routes.py' or 'openapi:GET /v1/orders'."
+        },
+        "category": {
+          "enum": [
+            "happy_path",
+            "validation",
+            "missing_null",
+            "boundary",
+            "pagination_filtering",
+            "authentication",
+            "authorization",
+            "tenant_isolation",
+            "method_handling",
+            "schema",
+            "business_rule",
+            "regression",
+            "error_handling",
+            "rate_limit",
+            "idempotency",
+            "security_negative"
+          ]
+        },
+        "priority": { "enum": ["P1", "P2", "P3"] },
+        "destructive": { "type": "boolean", "default": false },
+        "auth_profile": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,63}$",
+          "description": "Name of an auth profile defined in projects.yaml. Never a raw credential."
+        },
+        "depends_on": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^TC-[0-9]{3}$" }
+        },
+        "capture": {
+          "type": "object",
+          "description": "Values extracted from this response for use by dependent cases as {{captures.<name>}}.",
+          "maxProperties": 10,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^\\$((\\.[A-Za-z_][A-Za-z0-9_-]*)|(\\[[0-9]+\\]))*$"
+          }
+        },
+        "request": { "$ref": "#/$defs/request" },
+        "expect": { "$ref": "#/$defs/expect" },
+        "notes": { "type": "string", "maxLength": 1000 }
+      }
+    }
+  }
+}

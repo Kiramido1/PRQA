@@ -1,0 +1,56 @@
+{
+  "package_version": "1.0",
+  "generated_at": "2026-10-18T14:05:00Z",
+  "generated_by": "qa-runner context build (planned)",
+  "project_id": "acme-orders",
+  "run_id": "20261018T143000Z-acme-orders-pr42-a1b2c3d",
+  "pr": {
+    "repository": "example-org/orders-service",
+    "number": 42,
+    "title": "Add status filter and cancellation reason to orders API",
+    "author": "example-dev",
+    "state": "open",
+    "draft": false,
+    "labels": ["qa-test:standard"],
+    "base_ref": "main",
+    "head_ref": "feature/order-status-filter",
+    "base_sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+    "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "head_repository": "example-org/orders-service",
+    "is_fork": false,
+    "url": "https://github.com/example-org/orders-service/pull/42"
+  },
+  "description": {
+    "trust": "untrusted",
+    "truncated": false,
+    "redactions_applied": 1,
+    "text": "Adds `status` query filter to GET /v1/orders (values from OrderStatus enum). Cancelling an order now requires a `reason` (max 500 chars). Staging token for manual checks: [REDACTED:token]"
+  },
+  "changed_files": [
+    { "path": "src/orders/routes.py", "status": "modified", "additions": 38, "deletions": 6 },
+    { "path": "src/orders/schemas.py", "status": "modified", "additions": 21, "deletions": 2 },
+    { "path": "openapi/openapi.yaml", "status": "modified", "additions": 44, "deletions": 3 },
+    { "path": "tests/test_orders.py", "status": "modified", "additions": 57, "deletions": 0 },
+    { "path": "migrations/0007_cancel_reason.sql", "status": "added", "additions": 4, "deletions": 0 }
+  ],
+  "api_spec": {
+    "source": "repository",
+    "path": "openapi/openapi.yaml",
+    "ref": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "format": "openapi-3.x",
+    "changed_operations": [
+      "GET /v1/orders",
+      "POST /v1/orders/{orderId}/cancel"
+    ]
+  },
+  "verification": {
+    "repository_in_allowlist": true,
+    "head_sha_matches_api": true,
+    "label_present": true,
+    "target_environment": "staging"
+  },
+  "attachments": {
+    "diff_summary": "diff-summary.md",
+    "openapi_excerpt": "openapi-excerpt.yaml"
+  }
+}

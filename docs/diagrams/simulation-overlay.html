@@ -1,0 +1,365 @@
+<!-- PRQA workflow simulation overlay. Injected into system-architecture.html by scripts/build/inject_diagram_simulation.py.
+     Self-contained: no network, no storage beyond an optional speed preference. Values come from the recorded run of
+     Kiramido1/Amenly-Product PR #2 @ 292ad89 (Claude Code); timings are compressed for playback. -->
+<style id="prqa-sim-style">
+  :root {
+    --sim-bg: rgba(13, 17, 28, .94); --sim-fg: #e6e9f2; --sim-muted: #8a93a8; --sim-line: rgba(255,255,255,.09);
+    --sim-accent: #22d3a6; --sim-accent-2: #60a5fa; --sim-warn: #f59e0b; --sim-bad: #f43f5e; --sim-chip: rgba(255,255,255,.06);
+    --sim-shadow: 0 18px 50px rgba(0,0,0,.45);
+  }
+  html[data-theme="light"] {
+    --sim-bg: rgba(255,255,255,.96); --sim-fg: #172033; --sim-muted: #5b6478; --sim-line: rgba(15,23,42,.10);
+    --sim-accent: #059669; --sim-accent-2: #2563eb; --sim-chip: rgba(15,23,42,.05); --sim-shadow: 0 18px 50px rgba(15,23,42,.18);
+  }
+  #prqa-sim { position: fixed; right: 20px; bottom: 20px; width: 400px; max-width: calc(100vw - 32px); z-index: 2147483000;
+    background: var(--sim-bg); color: var(--sim-fg); border: 1px solid var(--sim-line); border-radius: 14px;
+    box-shadow: var(--sim-shadow); backdrop-filter: blur(10px); font: 13px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #prqa-sim * { box-sizing: border-box; }
+  #prqa-sim .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--sim-line); }
+  #prqa-sim .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sim-muted); flex: none; }
+  #prqa-sim.running .dot { background: var(--sim-accent); box-shadow: 0 0 0 0 var(--sim-accent); animation: simPulse 1.6s infinite; }
+  #prqa-sim .ttl { font-weight: 650; letter-spacing: .01em; }
+  #prqa-sim .sub { color: var(--sim-muted); font-size: 11.5px; }
+  #prqa-sim .grow { flex: 1; min-width: 0; }
+  #prqa-sim button, #prqa-sim select { font: inherit; color: inherit; background: var(--sim-chip); border: 1px solid var(--sim-line);
+    border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  #prqa-sim button:hover { border-color: var(--sim-accent); }
+  #prqa-sim button:focus-visible, #prqa-sim select:focus-visible { outline: 2px solid var(--sim-accent-2); outline-offset: 2px; }
+  #prqa-sim .start { background: var(--sim-accent); color: #04120d; border-color: transparent; font-weight: 650; padding: 7px 14px; }
+  html[data-theme="light"] #prqa-sim .start { color: #fff; }
+  #prqa-sim .min { padding: 4px 8px; }
+  #prqa-sim .body { padding: 12px 14px 14px; display: grid; gap: 12px; }
+  #prqa-sim.collapsed .body { display: none; }
+  #prqa-sim .ctrls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #prqa-sim .seg { display: inline-flex; border: 1px solid var(--sim-line); border-radius: 8px; overflow: hidden; }
+  #prqa-sim .seg button { border: 0; border-radius: 0; background: transparent; padding: 5px 9px; }
+  #prqa-sim .seg button[aria-pressed="true"] { background: var(--sim-chip); color: var(--sim-accent); font-weight: 650; }
+  #prqa-sim .tl { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+  #prqa-sim .tl i { height: 5px; border-radius: 3px; background: var(--sim-line); transition: background .3s; }
+  #prqa-sim .tl i.done { background: color-mix(in srgb, var(--sim-accent) 55%, transparent); }
+  #prqa-sim .tl i.now { background: var(--sim-accent); box-shadow: 0 0 8px var(--sim-accent); }
+  #prqa-sim .stage { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  #prqa-sim .stage b { font-size: 15px; }
+  #prqa-sim .stage code { color: var(--sim-accent-2); font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+  #prqa-sim .cap { color: var(--sim-muted); min-height: 38px; }
+  #prqa-sim .log { height: 150px; overflow: auto; background: rgba(0,0,0,.28); border: 1px solid var(--sim-line); border-radius: 9px;
+    padding: 8px 10px; font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  html[data-theme="light"] #prqa-sim .log { background: #0f172a; color: #e2e8f0; }
+  #prqa-sim .log div { white-space: pre-wrap; word-break: break-word; animation: simIn .25s ease-out; }
+  #prqa-sim .log .t { color: #64748b; }
+  #prqa-sim .log .ok { color: #34d399; } #prqa-sim .log .bad { color: #fb7185; } #prqa-sim .log .warn { color: #fbbf24; }
+  #prqa-sim .log .info { color: #93c5fd; }
+  #prqa-sim .res { display: none; gap: 8px; }
+  #prqa-sim .res.show { display: grid; animation: simIn .35s ease-out; }
+  #prqa-sim .bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; background: var(--sim-line); }
+  #prqa-sim .bar span { display: block; height: 100%; transition: width .9s cubic-bezier(.2,.8,.2,1); width: 0; }
+  #prqa-sim .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; }
+  #prqa-sim .kpis div { background: var(--sim-chip); border-radius: 8px; padding: 6px 4px; }
+  #prqa-sim .kpis b { display: block; font-size: 17px; }
+  #prqa-sim .kpis small { color: var(--sim-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+  #prqa-sim .verdict { font-weight: 700; color: var(--sim-bad); }
+  #prqa-sim .note { color: var(--sim-muted); font-size: 11px; }
+  /* diagram states while the simulation owns the stage */
+  svg.prqa-sim-on g[data-node-id] { transition: opacity .35s, filter .35s; opacity: .28; }
+  svg.prqa-sim-on g[data-node-id].sim-active { opacity: 1; filter: drop-shadow(0 0 10px var(--sim-accent)); }
+  svg.prqa-sim-on g[data-node-id].sim-up { opacity: 1; }
+  svg.prqa-sim-on g[data-node-id].sim-down { opacity: .18; filter: grayscale(1); }
+  svg.prqa-sim-on path[data-edge-id], svg.prqa-sim-on g[data-edge-id] { transition: opacity .35s; opacity: .12; }
+  svg.prqa-sim-on path[data-edge-id].sim-edge, svg.prqa-sim-on g[data-edge-id].sim-edge { opacity: 1; }
+  svg.prqa-sim-on path[data-edge-id].sim-edge { stroke: var(--sim-accent) !important; stroke-width: 2.4px !important; }
+  #prqa-sim-layer .tok { fill: var(--sim-accent); filter: drop-shadow(0 0 6px var(--sim-accent)); }
+  #prqa-sim-layer .tok.rev { fill: var(--sim-accent-2); filter: drop-shadow(0 0 6px var(--sim-accent-2)); }
+  #prqa-sim-layer .chip rect { fill: var(--sim-bg); stroke: var(--sim-accent); stroke-width: 1; }
+  #prqa-sim-layer .chip.rev rect { stroke: var(--sim-accent-2); }
+  #prqa-sim-layer .chip text { fill: var(--sim-fg); font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #prqa-sim-layer .ring { fill: none; stroke: var(--sim-accent); stroke-width: 2; }
+  #prqa-sim-layer .badge rect { rx: 8px; } #prqa-sim-layer .badge text { font: 700 10px Inter, system-ui, sans-serif; fill: #fff; }
+  @keyframes simPulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sim-accent) 70%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
+  @keyframes simIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  @media (max-width: 640px) { #prqa-sim { right: 16px; left: 16px; bottom: 16px; width: auto; } #prqa-sim .log { height: 110px; } }
+  /* while the panel is open on a wide screen, the diagram makes room for it instead of hiding behind it */
+  @media (min-width: 1100px) { html.prqa-sim-open body { padding-right: 432px !important; transition: padding .3s; } }
+  @media print { #prqa-sim, #prqa-sim-layer { display: none !important; } }
+</style>
+<section id="prqa-sim" class="collapsed" aria-label="Workflow simulation">
+  <div class="hd">
+    <span class="dot" aria-hidden="true"></span>
+    <div class="grow"><div class="ttl">Workflow simulation</div><div class="sub" id="sim-sub">PR #2 · 292ad89 · Claude Code · claude-sonnet-5-5</div></div>
+    <button class="start" id="sim-start" type="button">▶ Start simulation</button>
+    <button class="min" id="sim-toggle" type="button" aria-label="Show or hide the simulation panel" aria-expanded="false">▾</button>
+  </div>
+  <div class="body">
+    <div class="ctrls">
+      <button id="sim-prev" type="button" aria-label="Previous stage">⏮</button>
+      <button id="sim-play" type="button" aria-label="Pause">❚❚</button>
+      <button id="sim-next" type="button" aria-label="Next stage">⏭</button>
+      <button id="sim-reset" type="button" aria-label="Restart">⟲</button>
+      <span class="seg" role="group" aria-label="Speed">
+        <button type="button" data-speed="0.5" aria-pressed="false">0.5×</button>
+        <button type="button" data-speed="1" aria-pressed="true">1×</button>
+        <button type="button" data-speed="2" aria-pressed="false">2×</button>
+      </span>
+    </div>
+    <div class="tl" id="sim-tl" aria-hidden="true"></div>
+    <div>
+      <div class="stage"><b id="sim-stage">Ready</b><code id="sim-call"></code></div>
+      <div class="cap" id="sim-cap">Press Start to watch one real run travel through the system, stage by stage.</div>
+    </div>
+    <div class="log" id="sim-log" role="log" aria-live="polite"></div>
+    <div class="res" id="sim-res">
+      <div class="stage"><b>Result · <span class="verdict">FAIL</span></b><code>30 scenarios · 11 sessions · ~7 min</code></div>
+      <div class="bar" aria-hidden="true"><span id="b-pass" style="background:#10b981"></span><span id="b-fail" style="background:#f43f5e"></span><span id="b-na" style="background:#94a3b8"></span></div>
+      <div class="kpis"><div><b>14</b><small>Pass</small></div><div><b>11</b><small>Fail</small></div><div><b>5</b><small>N/A</small></div><div><b>11</b><small>Defects</small></div></div>
+      <div class="note">Top defects: calc 1e308+1e308 → 200 with result null · password-strength echoes the plaintext password + unsalted MD5. Timings compressed for playback.</div>
+    </div>
+  </div>
+</section>
+<script id="prqa-sim-script">
+(() => {
+  "use strict";
+  const root = document.getElementById("prqa-sim");
+  const anchor = document.getElementById("node-stages");
+  if (!root || !anchor) return;
+  const svg = anchor.ownerSVGElement;
+  const NS = "http://www.w3.org/2000/svg";
+  const $ = (id) => document.getElementById(id);
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------------------------------------------------------------------------------------------- the script --
+  const chain = (call) => [["n8n-relay", call], ["relay-bridge"], ["bridge-stages"]];
+  const back = (msg) => [["bridge-stages", msg, true], ["relay-bridge", null, true], ["n8n-relay", null, true]];
+  const STAGES = ["Trigger", "Discover", "Claim", "Prepare", "Prompt", "Gate", "Submit", "Run", "Poll", "Finalize"];
+
+  function script() {
+    const run = [
+      { s: 6, title: "Submit · local executor", call: "POST /stage/submit", cap: "The gated prompt is re-verified and the runner starts Claude Code inside bubblewrap: no home directory, no network except the disposable API.",
+        act: [...chain("POST /stage/submit"), ["log", "submit → local runner · engine claude · model claude-sonnet-5-5", "info"], ["stages-localexec", "start runner"], ["on", "localexec"],
+              ["log", "bwrap: --clearenv · repo ro · evidence rw · only ~/.claude/.credentials.json", "t"], ["localexec-agent", "claude -p"], ["on", "agent"], ...back("job_id local-am2-292ad896")] },
+      { s: 7, title: "Run · 30 scenarios in 11 sessions", call: "curl → disposable API", cap: "Each session executes up to 3 scenarios with curl only and writes one tc/<ID>.json record per scenario.",
+        act: [
+          ["localexec-agent", "session 1/11"], ["localexec-env", "POST /auth/register"], ["localexec-env", "201 Created", true], ["log", "REGIST-001  PASS  register happy path", "ok"],
+          ["localexec-env", "POST /auth/login"], ["localexec-env", "200 · last_login unchanged", true], ["log", "LOGIN-003   FAIL  last_login not persisted", "bad"],
+          ["localexec-agent", "session 5/11"], ["localexec-env", "POST /utils/calc 1e308+1e308"], ["localexec-env", "200 {result: null}", true], ["log", "CALC-002    FAIL  overflow returns 200 with result null", "bad"],
+          ["localexec-agent", "session 6/11"], ["localexec-env", "POST /utils/password-strength"], ["localexec-env", "echoes password + md5", true], ["log", "PASSWO-001  FAIL  plaintext password + unsalted MD5 in response", "bad"],
+          ["localexec-agent", "session 9/11"], ["localexec-env", "GET /utils/fibonacci?n=10000"], ["localexec-env", "500", true], ["log", "STATED-004  FAIL  fibonacci 500 for large n", "bad"],
+          ["localexec-agent", "session 11/11"], ["localexec-env", "GET /utils/ping (bad token)"], ["localexec-env", "401", true], ["log", "AUTH-002    PASS  malformed bearer rejected", "ok"],
+          ["log", "aggregate: 30 records → qa-result.json (schema valid)", "info"]] },
+    ];
+    return [
+      { s: 0, title: "Trigger · label added", call: "GitHub", cap: "A developer adds the label to be test to PR #2. Nothing is pushed to PRQA: n8n will notice on its next tick.",
+        act: [["on", "github"], ["log", "PR #2 feat(utils): add stateless utility endpoints · +label to be test", "info"], ["wait", 700]] },
+      { s: 1, title: "Discover", call: "POST /stage/discover", cap: "Every minute n8n asks the host for work. The label poller lists open PRs with the label that were not tested at this head SHA.",
+        act: [["on", "n8n"], ["log", "n8n · Every Minute tick", "t"], ...chain("POST /stage/discover"), ["stages-poller", "discover"], ["poller-github", "gh api /pulls"],
+              ["poller-github", "PR #2 labelled", true], ["stages-poller", null, true], ["log", "eligible: [2] · head 292ad896", "ok"], ...back("next: claim #2")] },
+      { s: 2, title: "Claim", call: "POST /stage/claim", cap: "The run key (PR, SHA, policy) is reserved under the state lock, so the same commit is never tested twice.",
+        act: [...chain("POST /stage/claim"), ["stages-store", "flock · claim"], ["on", "store"], ["log", "claimed Kiramido1/Amenly-Product#2@292ad896:auto-v1", "ok"], ...back("claimed")] },
+      { s: 3, title: "Prepare", call: "POST /stage/prepare", cap: "A disposable copy of the PR's API and Postgres starts at the exact head SHA; PRQA reads its OpenAPI spec and builds the prompt context.",
+        act: [...chain("POST /stage/prepare"), ["stages-env", "compose up @292ad89"], ["up", "env"], ["log", "disposable env up · OpenAPI loaded · identity probe ok", "ok"],
+              ...back("groq request · wait_s 0")] },
+      { s: 4, title: "Prompt · 3 Groq steps", call: "POST /stage/promptstep ×3", cap: "n8n calls Groq through the model proxy, which holds the key and enforces the shared 8,000 TPM budget. Each step is validated before the next.",
+        act: ["scope", "coverage", "sections"].flatMap((p, i) => [["n8n-modelproxy", `step ${i + 1}/3 · ${p}`], ["on", "modelproxy"], ["modelproxy-groq", "chat completion"], ["on", "groq"],
+              ["modelproxy-groq", "completion", true], ["n8n-modelproxy", null, true], ...chain("POST /stage/promptstep"), ["log", `promptstep ${p} · schema + provenance ok`, "ok"], ...back(i < 2 ? "next: call" : "next: gate")]) },
+      { s: 5, title: "Quality gate", call: "POST /stage/gate", cap: "The worker scores the full prompt against the 85-point rubric and its hard fails. A rejected prompt is replaced by the reference prompt.",
+        act: [...chain("POST /stage/gate"), ["stages-worker", "score prompt"], ["on", "worker"], ["stages-worker", "98 ≥ 85 accepted", true],
+              ["log", "gate ACCEPTED 98.0 (threshold 85) · hard fails []", "ok"], ...back("accepted")] },
+      ...run,
+      { s: 8, title: "Poll", call: "POST /stage/poll", cap: "n8n waits 30 seconds between polls (limit 90 minutes). A valid result is kept even if the runner fails afterwards.",
+        act: [["log", "n8n · Wait 30s", "t"], ...chain("POST /stage/poll"), ...back("running · waited 210s"), ["log", "poll → running · waited 210s", "warn"], ["log", "n8n · Wait 30s", "t"], ...chain("POST /stage/poll"), ...back("terminal · succeeded"),
+              ["log", "job finished · succeeded", "ok"]] },
+      { s: 9, title: "Finalize · report + Discord", call: "POST /stage/finalize", cap: "report.md and qa-result.json are written, the disposable environment is destroyed, and the verdict goes to Discord.",
+        act: [...chain("POST /stage/finalize"), ["stages-store", "report.md"], ["log", "report: runs/prqa-local-pr-runs/amenly-pr-2-292ad896…/report.md", "info"],
+              ["stages-env", "teardown"], ["down", "env"], ["log", "cleanup ok · env destroyed", "t"], ["stages-discord", "3 messages"], ["on", "discord"],
+              ["log", "discord: delivered (3/3)", "ok"], ["log", "verdict FAIL · 14 pass · 11 fail · 5 n/a · 11 defects", "bad"], ...back("executed"), ["result"]] },
+    ];
+  }
+
+  // ---------------------------------------------------------------------------------------------- runtime ----
+  let speed = 1, steps = script(), idx = 0, token = 0, paused = false, running = false, clock = 0;
+  try { const v = parseFloat(localStorage.getItem("prqa-sim-speed")); if ([0.5, 1, 2].includes(v)) speed = v; } catch (_) {}
+  const layer = document.createElementNS(NS, "g");
+  layer.id = "prqa-sim-layer";
+  layer.setAttribute("pointer-events", "none");
+  svg.appendChild(layer);
+  STAGES.forEach(() => $("sim-tl").appendChild(document.createElement("i")));
+
+  class Cancelled extends Error {}
+  const sleep = (ms, my) => new Promise((res, rej) => {
+    let left = ms / speed, last = performance.now();
+    const tick = (now) => {
+      if (my !== token) return rej(new Cancelled());
+      if (!paused) left -= now - last;
+      last = now;
+      left <= 0 ? res() : requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const node = (id) => svg.querySelector(`g[data-node-id="${id}"]`);
+  const edgePath = (id) => svg.querySelector(`path[data-edge-id="${id}"][d]`);
+  const edgeEls = (id) => svg.querySelectorAll(`[data-edge-id="${id}"]`);
+
+  function log(text, cls) {
+    const box = $("sim-log"), row = document.createElement("div");
+    const t = `T+${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock % 60).padStart(2, "0")}`;
+    row.innerHTML = `<span class="t">${t}</span>  <span class="${cls || ""}"></span>`;
+    row.lastElementChild.textContent = text;
+    box.appendChild(row);
+    box.scrollTop = box.scrollHeight;
+  }
+  function chip(label, rev) {
+    const g = document.createElementNS(NS, "g"), r = document.createElementNS(NS, "rect"), tx = document.createElementNS(NS, "text");
+    g.setAttribute("class", "chip" + (rev ? " rev" : ""));
+    tx.textContent = label; tx.setAttribute("x", 8); tx.setAttribute("y", 14);
+    g.append(r, tx); layer.appendChild(g);
+    const w = tx.getComputedTextLength() + 16;
+    r.setAttribute("width", w); r.setAttribute("height", 20); r.setAttribute("rx", 10);
+    g.dataset.w = w;
+    return g;
+  }
+  async function travel(id, label, rev, my) {
+    const p = edgePath(id);
+    if (!p) return;
+    edgeEls(id).forEach((e) => e.classList.add("sim-edge"));
+    const len = p.getTotalLength(), dur = reduced ? 120 : Math.max(520, Math.min(1300, len * 2.6));
+    const dot = document.createElementNS(NS, "circle");
+    dot.setAttribute("r", 6); dot.setAttribute("class", "tok" + (rev ? " rev" : ""));
+    layer.appendChild(dot);
+    const c = label ? chip(label, rev) : null;
+    let t = 0, last = performance.now();
+    try {
+      await new Promise((res, rej) => {
+        const step = (now) => {
+          if (my !== token) return rej(new Cancelled());
+          if (!paused) t += (now - last) * speed;
+          last = now;
+          const k = Math.min(1, t / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+          const pt = p.getPointAtLength((rev ? 1 - e : e) * len);
+          dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y);
+          if (c) c.setAttribute("transform", `translate(${pt.x - c.dataset.w / 2} ${pt.y - 32})`);
+          k >= 1 ? res() : requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+      const target = node(rev ? p.dataset.edgeFrom : p.dataset.edgeTo);
+      if (target) target.classList.add("sim-active");
+      await ripple(rev ? p.dataset.edgeFrom : p.dataset.edgeTo, my);
+    } finally {
+      dot.remove(); if (c) c.remove();
+      edgeEls(id).forEach((e) => e.classList.remove("sim-edge"));
+    }
+    clock += 2;
+  }
+  async function ripple(id, my) {
+    const g = node(id), r = g && g.querySelector("rect[class^='c-']:not(.c-mask)");
+    if (!r || reduced) return;
+    const ring = document.createElementNS(NS, "rect");
+    ["x", "y", "width", "height", "rx"].forEach((a) => ring.setAttribute(a, r.getAttribute(a)));
+    ring.setAttribute("class", "ring"); layer.appendChild(ring);
+    const x = +r.getAttribute("x"), y = +r.getAttribute("y"), w = +r.getAttribute("width"), h = +r.getAttribute("height");
+    try {
+      for (let i = 1; i <= 8; i++) {
+        await sleep(28, my);
+        const d = i * 2.2;
+        ring.setAttribute("x", x - d); ring.setAttribute("y", y - d); ring.setAttribute("width", w + 2 * d); ring.setAttribute("height", h + 2 * d);
+        ring.style.opacity = String(1 - i / 8);
+      }
+    } finally { ring.remove(); }
+  }
+  async function act(a, my) {
+    const [k, b, c] = a;
+    if (k === "log") { log(b, c); return sleep(260, my); }
+    if (k === "wait") return sleep(b, my);
+    if (k === "on") { node(b)?.classList.add("sim-active"); return; }
+    if (k === "up") { node(b)?.classList.remove("sim-down"); node(b)?.classList.add("sim-up", "sim-active"); return; }
+    if (k === "down") { const n = node(b); n?.classList.remove("sim-up", "sim-active"); n?.classList.add("sim-down"); return sleep(300, my); }
+    if (k === "pulse") { node(b)?.classList.add("sim-active"); clock += 20; return ripple(b, my); }
+    if (k === "result") return showResult();
+    return travel(k, b, !!c, my);
+  }
+  function setStage(i) {
+    const st = steps[i], tl = $("sim-tl").children;
+    [...tl].forEach((el, n) => { el.className = n < st.s ? "done" : n === st.s ? "now" : ""; });
+    $("sim-stage").textContent = `${st.s + 1} · ${st.title}`;
+    $("sim-call").textContent = st.call;
+    $("sim-cap").textContent = st.cap;
+    svg.querySelectorAll("g[data-node-id].sim-active").forEach((n) => { if (!n.classList.contains("sim-up")) n.classList.remove("sim-active"); });
+  }
+  function showResult() {
+    $("sim-res").classList.add("show");
+    requestAnimationFrame(() => { $("b-pass").style.width = "46.7%"; $("b-fail").style.width = "36.7%"; $("b-na").style.width = "16.6%"; });
+  }
+  function clearScene() {
+    layer.replaceChildren();
+    svg.querySelectorAll(".sim-active,.sim-up,.sim-down,.sim-edge").forEach((e) => e.classList.remove("sim-active", "sim-up", "sim-down", "sim-edge"));
+  }
+  function stateBefore(i) {                          // environment state when jumping straight to a stage
+    const envUp = steps.slice(0, i).some((s) => s.act.some((a) => a[0] === "up"));
+    const envDown = steps.slice(0, i).some((s) => s.act.some((a) => a[0] === "down"));
+    if (envUp && !envDown) node("env")?.classList.add("sim-up");
+  }
+  async function play(from) {
+    const my = ++token;
+    running = true; paused = false; idx = from;
+    root.classList.add("running"); root.classList.remove("collapsed"); dock(true); $("sim-toggle").textContent = "▴";
+    $("sim-toggle").setAttribute("aria-expanded", "true");
+    svg.classList.add("prqa-sim-on");
+    $("sim-start").textContent = "■ Stop"; $("sim-play").textContent = "❚❚"; $("sim-play").setAttribute("aria-label", "Pause");
+    if (from === 0) { $("sim-log").replaceChildren(); $("sim-res").classList.remove("show"); ["b-pass", "b-fail", "b-na"].forEach((b) => ($(b).style.width = "0")); clock = 0; }
+    clearScene(); stateBefore(from);
+    try {
+      for (; idx < steps.length; idx++) {
+        setStage(idx);
+        log(`── ${steps[idx].title} ──`, "t");
+        for (const a of steps[idx].act) await act(a, my);
+        clock += 30;
+        await sleep(650, my);
+      }
+      running = false;
+      root.classList.remove("running");
+      $("sim-start").textContent = "▶ Replay";
+      $("sim-stage").textContent = "Done · run executed";
+      $("sim-call").textContent = "verdict FAIL";
+      $("sim-cap").textContent = "The whole run, end to end. Use ⏮ ⏭ to revisit a stage.";
+      [...$("sim-tl").children].forEach((el) => (el.className = "done"));
+    } catch (e) { if (!(e instanceof Cancelled)) throw e; }
+  }
+  function dock(open) {
+    document.documentElement.classList.toggle("prqa-sim-open", open);
+    window.dispatchEvent(new Event("resize"));
+  }
+  function stop() {
+    token++; running = false; paused = false;
+    clearScene(); svg.classList.remove("prqa-sim-on");
+    root.classList.remove("running");
+    $("sim-start").textContent = "▶ Start simulation";
+    $("sim-stage").textContent = "Ready"; $("sim-call").textContent = "";
+    $("sim-cap").textContent = "Press Start to watch one real run travel through the system, stage by stage.";
+    [...$("sim-tl").children].forEach((el) => (el.className = ""));
+  }
+
+  $("sim-start").addEventListener("click", () => (running ? stop() : play(0)));
+  $("sim-play").addEventListener("click", () => {
+    if (!running) return play(idx >= steps.length ? 0 : idx);
+    paused = !paused;
+    root.classList.toggle("running", !paused);
+    $("sim-play").textContent = paused ? "▶" : "❚❚";
+    $("sim-play").setAttribute("aria-label", paused ? "Resume" : "Pause");
+  });
+  $("sim-next").addEventListener("click", () => play(Math.min(steps.length - 1, (running ? idx : -1) + 1)));
+  $("sim-prev").addEventListener("click", () => play(Math.max(0, (running ? idx : steps.length) - 1)));
+  $("sim-reset").addEventListener("click", () => play(0));
+  $("sim-toggle").addEventListener("click", () => {
+    const c = root.classList.toggle("collapsed");
+    dock(!c);
+    $("sim-toggle").textContent = c ? "▾" : "▴";
+    $("sim-toggle").setAttribute("aria-expanded", String(!c));
+  });
+  root.querySelectorAll("[data-speed]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(+b.dataset.speed === speed));
+    b.addEventListener("click", () => {
+      speed = +b.dataset.speed;
+      root.querySelectorAll("[data-speed]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      try { localStorage.setItem("prqa-sim-speed", String(speed)); } catch (_) {}
+    });
+  });
+})();
+</script>

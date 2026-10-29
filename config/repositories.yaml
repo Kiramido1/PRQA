@@ -1,0 +1,97 @@
+# PR QA Pilot — repository configuration registry
+#
+# SAFETY RULES (enforced by worker/prqa_worker/registry.py + policy.py, not only by this comment):
+#   * Every entry is DISABLED or PENDING APPROVAL in Phase 1.
+#   * `enabled: true` has no effect while AUTOMATION_MODE=review_only or
+#     REAL_PROJECT_TESTING_ENABLED=false — the worker treats it as disabled and logs a warning.
+#   * `kind: synthetic` entries are fixtures. They never reach GitHub, the prompt LLM, Discord or OpenCode;
+#     jobs for them are served by the mock executor only, and the repository name must start
+#     with `synthetic-org/`.
+#   * Onboarding a real repository is a Phase 2 action that needs explicit user approval:
+#     set kind: real, enabled: true, approval_status: approved, approved_by, approved_at.
+#
+# Secrets are never stored here. Target-API tokens are referenced by environment-variable NAME.
+
+registry_version: "1.0"
+
+defaults:
+  enabled: false
+  approval_status: pending_approval        # pending_approval | approved | synthetic_fixture
+  allowed_events: [labeled]                # GitHub pull_request actions that may start a job
+  allowed_labels:
+    - qa-test:smoke
+    - qa-test:standard
+    - qa-test:comprehensive
+    - qa-test:security
+  fork_prs_eligible: false
+  max_runtime_minutes: 30
+  max_retries: 1
+  report:
+    discord: true
+    github_comment: true
+
+repositories:
+  # ---------------------------------------------------------------------------
+  # SYNTHETIC FIXTURE — not a real repository. Used by the Phase 1 mock pipeline.
+  # ---------------------------------------------------------------------------
+  - full_name: synthetic-org/sample-orders-api
+    kind: synthetic
+    enabled: false
+    approval_status: synthetic_fixture
+    display_name: "Sample Orders API (SYNTHETIC fixture — no such repository exists)"
+    default_branch: main
+    api:
+      environment: mock
+      base_url: "http://prqa-mocks:8090/target"       # served by mocks/mock_services.py
+      openapi_path: "/openapi.json"
+      auth_profiles:
+        anonymous: { type: none }
+        tenant_a_user: { type: bearer_token, token_env: QA_SYNTHETIC_TENANT_A_TOKEN }
+    opencode:
+      model: ""                                       # unused: synthetic jobs never run OpenCode
+    fixtures:
+      pr_event: "synthetic/github-pr-labeled.synthetic.json"
+      pr_context: "synthetic/pr-context.synthetic.json"
+      llm_response: "synthetic/llm-response.synthetic.json"
+      result: "synthetic/opencode-result.synthetic.json"
+
+  # ---------------------------------------------------------------------------
+  # PLACEHOLDER for the first real repository — Phase 2 ONLY. Not a real repo.
+  # Leave disabled. Replace the name only after the user approves onboarding.
+  # ---------------------------------------------------------------------------
+  - full_name: your-org/your-first-real-repo
+    kind: real
+    enabled: false
+    approval_status: pending_approval
+    display_name: "PLACEHOLDER — replace after Phase 2 approval"
+    default_branch: main
+    api:
+      environment: staging                            # never production (rejected by policy)
+      base_url: "https://replace-me.staging.example.test"
+      openapi_path: "/openapi.json"
+      auth_profiles:
+        anonymous: { type: none }
+        qa_user: { type: bearer_token, token_env: QA_YOUR_REPO_QA_USER_TOKEN }
+    opencode:
+      model: ""                                       # empty = worker default OPENCODE_MODEL (GLM-5.3-Flash free); override only with approval
+    approved_by: null
+    approved_at: null
+
+  - full_name: Kiramido1/Amenly-Product
+    kind: real
+    enabled: false
+    approval_status: pending_approval
+    display_name: "Kiramido1/Amenly-Product (public; operator-triggered simulation runs; pending approval)"
+    default_branch: main
+    allowed_events: [labeled]
+    api:
+      environment: staging
+      base_url: "http://prqa-target-api:8000"
+      openapi_path: "/api/v1/openapi.json"
+      auth_profiles:
+        anonymous: { type: none }
+    max_runtime_minutes: 90
+    opencode:
+      model: ""
+    approved_by: null
+    approved_at: null

@@ -1,0 +1,1346 @@
+{
+  "id": "PrqaWebhookRecvr",
+  "name": "PRQA 01 · GitHub Webhook Receiver",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 01 · GitHub Webhook Receiver\nReceives `pull_request` events, verifies the HMAC signature over the raw body, accepts `labeled` with the opt-in label (`PRQA_TRIGGER_LABEL`, default `to be test`) or `qa-test:*` on open non-draft PRs, cancels active jobs on `unlabeled` / `closed` / `synchronize`, dedupes by `X-GitHub-Delivery`, responds fast (202) and starts the Main Pipeline asynchronously.\n\nPaths: `POST /webhook/prqa/github` (GitHub) · `POST /webhook/prqa/actions` (GitHub Actions, see below)",
+        "height": 190,
+        "width": 760,
+        "color": 1
+      },
+      "id": "667e93ac-54c9-5f8f-8ceb-819bd60f6457",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔒 Phase 1 — REVIEW ONLY\n`AUTOMATION_MODE=review_only` (compose/.env). The worker returns **mock** endpoints for GitHub, the prompt LLM and Discord, rejects every non-synthetic job with `REVIEW_ONLY_MODE`, and the registry has **0 enabled repositories**.\n\nNothing in this workflow can reach a real repository, API or channel until Phase 2 is explicitly approved.",
+        "height": 190,
+        "width": 620,
+        "color": 3
+      },
+      "id": "63e6a77a-3ea3-5f9a-98ce-05f59fd0f359",
+      "name": "Note 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prqa/github",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "c0753472-ee02-5802-a853-0c0fec692226",
+      "name": "GitHub Webhook (POST /prqa/github)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "notes": "Raw body kept for HMAC verification",
+      "notesInFlow": true,
+      "webhookId": "prqa-github-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify GitHub's X-Hub-Signature-256 over the RAW request body (never over re-serialized JSON).\nconst crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst sig = String(headers['x-hub-signature-256'] || '');\nconst event = String(headers['x-github-event'] || '');\nconst deliveryId = String(headers['x-github-delivery'] || '');\nconst secret = $env.GITHUB_WEBHOOK_SECRET || '';\n\nlet raw;\nif (item.binary && item.binary.data && item.binary.data.data) {\n  raw = Buffer.from(item.binary.data.data, 'base64');          // rawBody option → binary.data\n} else {\n  raw = Buffer.from(JSON.stringify(item.json.body ?? {}), 'utf8'); // fallback, only if raw body unavailable\n}\n\nlet valid = false;\nlet reason = 'ok';\nif (!secret) {\n  reason = 'GITHUB_WEBHOOK_SECRET is not configured';\n} else if (!sig.startsWith('sha256=')) {\n  reason = 'missing or malformed X-Hub-Signature-256';\n} else {\n  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');\n  valid = expected.length === sig.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig));\n  if (!valid) reason = 'signature mismatch';\n}\n\nlet payload = item.json.body;\nif (typeof payload !== 'object' || payload === null) {\n  try { payload = JSON.parse(raw.toString('utf8')); } catch (e) { payload = null; }\n}\nreturn [{ json: {\n  signature_valid: valid,\n  signature_reason: reason,\n  event,\n  delivery_id: deliveryId,\n  raw_body_bytes: raw.length,\n  automation_mode: $env.PRQA_AUTOMATION_MODE || 'review_only',\n  payload,\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "758ab3c8-0c17-5678-acd6-2f332f7b8816",
+      "name": "Verify HMAC Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        300
+      ],
+      "notes": "X-Hub-Signature-256 == HMAC-SHA256(raw body, GITHUB_WEBHOOK_SECRET)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "db85c23d-910d-5d5a-a4c6-8855669e95cf",
+              "leftValue": "={{ $json.signature_valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a40fead0-5464-5c7d-93d3-133818357527",
+      "name": "Signature Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, reason: $json.signature_reason }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "ff472889-a5cc-567b-b5a7-ee690cdf90aa",
+      "name": "Respond 401 Invalid Signature",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        840,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Accept `pull_request`/`labeled` with the opt-in label ($env.PRQA_TRIGGER_LABEL, default \"to be test\" → $env.PRQA_DEFAULT_TEST_LEVEL)\n// or a qa-test:* label, on an open non-draft PR. `unlabeled` (PRQA label), `closed` and `synchronize` are LIFECYCLE events:\n// not eligible, but they cancel active jobs of that PR (worker /jobs/cancel). Everything else is acknowledged (200) and dropped.\n// Mirrors worker/prqa_worker/validation.py::evaluate_event. Payload content is UNTRUSTED data.\nconst QA = { 'qa-test:smoke': 'smoke', 'qa-test:standard': 'standard', 'qa-test:comprehensive': 'comprehensive', 'qa-test:security': 'security' };\nconst LEVELS = ['smoke', 'standard', 'comprehensive', 'security'];\nconst TRIGGER_LABEL = String($env.PRQA_TRIGGER_LABEL || 'to be test').trim().toLowerCase();\nconst DEFAULT_LEVEL = LEVELS.includes(String($env.PRQA_DEFAULT_TEST_LEVEL || '').toLowerCase()) ? String($env.PRQA_DEFAULT_TEST_LEVEL).toLowerCase() : 'standard';\nconst LIFECYCLE = { unlabeled: 'LABEL_REMOVED', closed: 'PR_CLOSED', synchronize: 'SUPERSEDED' };\n// Optional authorization: $env.PRQA_TRIGGER_ALLOWED_ACTORS (comma-separated logins). Checked against `sender.login`,\n// which GitHub sets for the HMAC-authenticated event (the user who added the label) — never a PR-author-controlled field.\nconst ALLOWED_ACTORS = String($env.PRQA_TRIGGER_ALLOWED_ACTORS || '').split(',').map(a => a.trim().toLowerCase()).filter(Boolean);\nconst SHA = /^[0-9a-f]{40}$/;\nconst REPO = /^[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$/;\nconst inp = $input.first().json;\nconst p = inp.payload || {};\nconst out = (eligible, reason_code, reason, job_seed, lifecycle) => [{ json: { ...inp, payload: undefined, eligible, reason_code, reason, job_seed: job_seed || null, lifecycle: lifecycle || null } }];\nconst levelFor = (name) => { const n = String(name || '').trim(); if (TRIGGER_LABEL && n.toLowerCase() === TRIGGER_LABEL) return DEFAULT_LEVEL; return QA[n] || null; };\n\nif (inp.event === 'ping') return out(false, 'PING', 'GitHub ping acknowledged');\nif (inp.event !== 'pull_request') return out(false, 'EVENT_NOT_PULL_REQUEST', `event '${inp.event}' ignored`);\nif (!p.pull_request || !p.repository) return out(false, 'PAYLOAD_INVALID', 'pull_request/repository missing');\nconst pr = p.pull_request;\nconst repository = String(p.repository.full_name || '');\nif (!REPO.test(repository)) return out(false, 'PAYLOAD_INVALID', 'invalid repository name');\nconst label = String((p.label && p.label.name) || '').trim();\nconst headSha = String((pr.head || {}).sha || ''), baseSha = String((pr.base || {}).sha || '');\n\nif (p.action in LIFECYCLE) {\n  if (p.action === 'unlabeled' && levelFor(label) === null) return out(false, 'LABEL_NOT_QA', `removed label '${label}' is not a PRQA label`);\n  return out(false, `LIFECYCLE_${p.action.toUpperCase()}`, `'${p.action}' cancels active jobs for this PR`, null, {\n    action: 'cancel', reason: LIFECYCLE[p.action], repository, pr_number: Number(pr.number),\n    except_head_sha: (p.action === 'synchronize' && SHA.test(headSha)) ? headSha : null, label: label || null, delivery_id: inp.delivery_id,\n  });\n}\nif (p.action !== 'labeled') return out(false, 'ACTION_NOT_LABELED', `action '${p.action}' ignored`);\nconst level = levelFor(label);\nif (level === null) return out(false, 'LABEL_NOT_QA', `label '${label}' is neither '${TRIGGER_LABEL}' nor a qa-test label`);\nconst sender = String(((p.sender || {}).login) || '').trim();\nif (ALLOWED_ACTORS.length && (!sender || !ALLOWED_ACTORS.includes(sender.toLowerCase()))) return out(false, 'ACTOR_NOT_ALLOWED', `label added by '${sender || 'unknown'}' who is not in PRQA_TRIGGER_ALLOWED_ACTORS`);\nif (pr.state !== 'open') return out(false, 'PR_NOT_OPEN', 'pull request is not open');\nif (pr.draft) return out(false, 'PR_DRAFT', 'draft pull requests are not tested');\nif (!SHA.test(headSha) || !SHA.test(baseSha)) return out(false, 'PAYLOAD_INVALID', 'invalid head/base sha');\nconst headRepo = (pr.head || {}).repo || {};\nconst isFork = Boolean(headRepo.fork) || (Boolean(headRepo.full_name) && headRepo.full_name !== repository);\n\nreturn out(true, 'ELIGIBLE', `labeled pull_request with '${label}' → test level ${level}`, {\n  repository,\n  synthetic: repository.startsWith('synthetic-org/'),\n  test_level: level,\n  pr: {\n    number: Number(pr.number),\n    title: String(pr.title || '').slice(0, 300),\n    head_sha: headSha,\n    base_sha: baseSha,\n    head_ref: String((pr.head || {}).ref || '').slice(0, 255),\n    base_ref: String((pr.base || {}).ref || '').slice(0, 255),\n    is_fork: isFork,\n    url: String(pr.html_url || '').slice(0, 500),\n  },\n  trigger: { source: 'github_webhook', label: `qa-test:${level}`, requested_label: label, delivery_id: inp.delivery_id, requested_by: sender.slice(0, 100) || undefined },\n});",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "1094becd-3393-5928-95c8-4822e520dba3",
+      "name": "Validate Event & Extract PR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        300
+      ],
+      "notes": "pull_request + labeled + qa-test:* + open + not draft",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6a4b5e17-b56a-54da-92a2-0f43d7d7b8a0",
+              "leftValue": "={{ $json.eligible }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9a598b1c-b6ed-5d03-b107-f75ddf0b807f",
+      "name": "Eligible Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, ignored: true, reason_code: $json.reason_code, reason: $json.reason }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "12e775c8-47cb-5193-a0d9-d2ca58f64993",
+      "name": "Respond 200 Ignored",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0f02181c-8d6d-5adc-989e-50abf8f745b1",
+              "leftValue": "={{ $json.lifecycle ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8b8669b7-9e1f-52e8-84dd-4f76a2a20d57",
+      "name": "Lifecycle Event? (label removed / closed / new SHA)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/jobs/cancel",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ repository: $json.lifecycle.repository, pr_number: $json.lifecycle.pr_number, reason: $json.lifecycle.reason, except_head_sha: $json.lifecycle.except_head_sha, event: $json.reason_code, delivery_id: $json.delivery_id }) }}"
+      },
+      "id": "92a1c1e4-65e3-5950-b6c1-1e496b092b38",
+      "name": "Cancel Active Jobs (worker /jobs/cancel)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        460
+      ],
+      "notes": "unlabeled/closed → cancel all active jobs of the PR · synchronize → cancel jobs of older SHAs (re-label to test the new one)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, lifecycle: $('Validate Event & Extract PR').first().json.lifecycle, cancelled: ($json.body || {}).cancelled || [], worker_status: $json.statusCode }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "93d3a331-4d92-5c9f-9025-20f990db5de4",
+      "name": "Respond 200 Lifecycle Handled",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1960,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/deliveries/claim",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ delivery_id: $json.delivery_id }) }}"
+      },
+      "id": "4b245c63-9dd6-5e82-b8d8-5e7265ecf09b",
+      "name": "Claim Delivery ID (worker /deliveries/claim)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        300
+      ],
+      "notes": "200 = first time · 409 = already seen",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// First dedupe layer: the worker records every X-GitHub-Delivery id (POST /deliveries/claim → 200 new, 409 seen).\n// (Workflow static data is not used: Code-node writes to it are not persisted under n8n task runners.)\n// The worker applies the second layer on POST /jobs: one active job per repo#pr@sha:level.\nconst inp = $('Validate Event & Extract PR').first().json;\nconst claim = $input.first().json;\nconst code = Number(claim.statusCode || 0);\nif (code !== 200 && code !== 409) throw new Error(`delivery claim failed: worker returned HTTP ${code}`);\nreturn [{ json: { ...inp, duplicate: code === 409, dedupe_layer: 'worker_deliveries', first_seen_at: (claim.body || {}).first_seen_at || null,\n  received_at: new Date().toISOString(), webhook_execution_id: $execution.id } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "89977929-a35a-5787-bb13-43ba6e3d9385",
+      "name": "Dedupe by Delivery ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        300
+      ],
+      "notes": "Layer 1 of 2 (worker enforces repo#pr@sha:level on POST /jobs)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8e58c2b6-7070-54be-863c-f5c152eea297",
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b363a571-9e0a-5d64-a160-5e6cbe5aa855",
+      "name": "Duplicate Delivery?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, duplicate: true, delivery_id: $json.delivery_id, first_seen_at: $json.first_seen_at }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "4a5e1a77-0b39-5e8f-9718-39dde75fd6dd",
+      "name": "Respond 200 Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2240,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: true, delivery_id: $json.delivery_id, repository: $json.job_seed.repository, pr: $json.job_seed.pr.number, test_level: $json.job_seed.test_level, synthetic: $json.job_seed.synthetic, automation_mode: $json.automation_mode }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "5f3170ca-3bf7-52b2-9f49-765216a2c6a3",
+      "name": "Respond 202 Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PrqaMainPipeline",
+          "mode": "id",
+          "cachedResultName": "PRQA 00 · Main Pipeline"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "3b8c06ff-a55a-5c32-a612-9ff397de8e05",
+      "name": "Start Main Pipeline (async)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2520,
+        300
+      ],
+      "notes": "→ PRQA 00 · Main Pipeline (policy gate runs there)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "content": "## GitHub Actions entry — `POST /webhook/prqa/actions`\nCalled by the copy-paste workflow `.github/workflows/prqa.yml`. Headers `X-PRQA-Timestamp` + `X-PRQA-Signature` (HMAC-SHA256 over `<timestamp>.<raw body>` with `PRQA_WEBHOOK_SECRET`). The **worker** verifies the signature in constant time, enforces the ±300 s window, validates the payload, derives the idempotency key `gha:<repo>#<pr>@<sha>:<level>` and claims it (replay protection), rate-limits, and returns the `job_seed`. HTTP 202 means *accepted*, never *passed*: the result arrives on Discord after the job and validation complete.",
+        "height": 200,
+        "width": 1100,
+        "color": 5
+      },
+      "id": "da53a042-7984-58da-9807-848e0663cd4c",
+      "name": "Note 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prqa/actions",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "86cb40e2-5ce7-5a85-a8d1-797fa9b4953a",
+      "name": "GitHub Actions Webhook (POST /prqa/actions)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1100
+      ],
+      "notes": "Raw body kept for HMAC verification (worker)",
+      "notesInFlow": true,
+      "webhookId": "prqa-actions-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// GitHub Actions entry (POST /webhook/prqa/actions). Forward the RAW request bytes + the X-PRQA-* headers to the worker,\n// which verifies HMAC-SHA256(PRQA_WEBHOOK_SECRET, \"<timestamp>.<raw body>\") in constant time, enforces the ±300 s window,\n// validates the payload (schemas/actions-request.schema.json), derives the idempotency key and claims it (replay protection).\n// The webhook secret never has to exist in the n8n container. Nothing from the body is interpreted here.\nconst item = $input.first();\nconst headers = item.json.headers || {};\nlet body_b64;\nif (item.binary && item.binary.data && item.binary.data.data) {\n  body_b64 = item.binary.data.data;                                            // rawBody option → binary.data (base64)\n} else {\n  body_b64 = Buffer.from(JSON.stringify(item.json.body ?? {}), 'utf8').toString('base64'); // fallback only\n}\nreturn [{ json: {\n  body_b64,\n  signature: String(headers['x-prqa-signature'] || ''),\n  timestamp: String(headers['x-prqa-timestamp'] || ''),\n  idempotency_key: String(headers['x-prqa-idempotency-key'] || ''),\n  user_agent: String(headers['user-agent'] || '').slice(0, 200),\n  receiver_execution_id: $execution.id,\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "50f802d8-7472-57ed-a08c-5fd011702c6a",
+      "name": "Prepare Actions Intake (raw body + X-PRQA headers)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        1100
+      ],
+      "notes": "no secret, no interpretation of the body here",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/webhook/actions/intake",
+        "authentication": "none",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "aee19674-b0ce-5818-a47a-a7fbcf97e35c",
+      "name": "Verify, Validate & Claim (worker /webhook/actions/intake)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        1100
+      ],
+      "notes": "202 accepted · 200 duplicate/blocked · 401 bad signature/timestamp · 403 repo not registered/mismatch · 409 replayed · 413 too large · 422 invalid · 429 rate-limited · 503 credential missing",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ece0ff12-efae-5006-ba9b-7c2fc9eab7d6",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "accepted",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "accepted"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c163644f-83c6-577d-8341-b9fcf7e74979",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "duplicate",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "duplicate"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "aaf7fa0a-94c0-58b2-afac-e74b59f8182d",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "unauthorized",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unauthorized"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a8562912-52a9-56a5-8090-2ce3a48eb8c0",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "forbidden",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "forbidden"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "aeeb6e28-eacb-5749-879d-b17769f31041",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "rejected",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "rejected"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2eeb1269-ed22-574e-bd91-4a82c6c4b4f4",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "rate_limited",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "rate_limited"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5368d505-b698-59cb-9663-7370881f0ca5",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "cancelled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cancelled"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "88710562-7a34-5e90-8a16-599622b08f44",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "blocked",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "blocked"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "90a29eb9-bd9f-5a19-976c-887289912083",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "replayed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "replayed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "458ee365-f086-5027-b49c-911c4cb477bd",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "too_large",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "too_large"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "df314957-6796-57fa-a351-0520ac9637e9",
+                    "leftValue": "={{ String(($json.body || {}).outcome || 'error') }}",
+                    "rightValue": "unavailable",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unavailable"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "eca90658-18e3-5f56-8607-1240c72b4261",
+      "name": "Route Intake Outcome",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        840,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 202 path: shape the Main Pipeline input exactly like the GitHub-webhook path does (job_seed contract).\nconst r = $input.first().json;\nconst b = r.body || {};\nif (!b.job_seed) throw new Error('worker intake returned no job_seed');\nreturn [{ json: {\n  job_seed: b.job_seed,\n  delivery_id: b.idempotency_key,\n  idempotency_key: b.idempotency_key,\n  received_at: b.received_at || new Date().toISOString(),\n  entry_point: 'github_actions',\n  automation_mode: b.automation_mode,\n  policy_preview: b.policy_preview,\n  webhook_execution_id: $execution.id,\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "02f07d41-6d10-50bc-b0ab-eaa74071b5b6",
+      "name": "Build Pipeline Input (Actions)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: true, outcome: 'accepted', idempotency_key: $json.idempotency_key, repository: $json.job_seed.repository, pr: $json.job_seed.pr.number, head_sha: $json.job_seed.pr.head_sha, test_level: $json.job_seed.test_level, synthetic: $json.job_seed.synthetic, automation_mode: $json.automation_mode, policy_preview: $json.policy_preview, receiver_execution_id: $json.webhook_execution_id, message: 'Request accepted. PRQA will run the policy gate, the QA job, result validation and Discord reporting. HTTP 202 does not mean the test passed.' }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "d46a8c9c-a011-57b7-b3e2-b2da2e8bb4d9",
+      "name": "Respond 202 Accepted (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: 'duplicate', reason_code: $json.body.reason_code, reason: $json.body.reason, idempotency_key: $json.body.idempotency_key, first_seen_at: $json.body.first_seen_at || null, job_id: $json.body.job_id || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "0ea2a004-eec5-5598-8da1-df4ee7558a7e",
+      "name": "Respond 200 Duplicate (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "7becc4f4-6eb7-5fbe-b3ef-386477436270",
+      "name": "Respond 401 Unauthorized (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        1219
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "c6862c15-1009-5df9-9dd1-f0679d73d6a4",
+      "name": "Respond 403 Repository Not Registered (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        1380
+      ],
+      "notes": "onboarding = manual edit of config/repositories.yaml",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "c4619f9f-d6f9-56ee-be9a-f2a81ddf2df5",
+      "name": "Respond 422 Invalid Request (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        1540
+      ],
+      "notes": "schema / consistency / PR not open / draft / key mismatch",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 429
+        }
+      },
+      "id": "16fc9976-f0d5-5347-aabe-d8e0ad3410e9",
+      "name": "Respond 429 Rate Limited (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        1700
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 503
+        }
+      },
+      "id": "31d759d1-7036-5624-9ccc-7a16d75b8b9d",
+      "name": "Respond 503 Worker Unavailable (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        1860
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: 'cancelled', reason_code: $json.body.reason_code, reason: $json.body.reason, cancelled: $json.body.cancelled || [], receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "c44b9d2d-c069-5c4c-b317-b109fbb0ee09",
+      "name": "Respond 200 Lifecycle Cancelled (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        2020
+      ],
+      "notes": "poller/Actions observed the label removed or PR closed → active jobs cancelled, nothing started",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: 'blocked', reason_code: $json.body.reason_code, reason: $json.body.reason, idempotency_key: $json.body.idempotency_key || null, automation_mode: $json.body.automation_mode || null, policy_preview: $json.body.policy_preview || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "c5291954-ab61-5430-94c8-a6424d43e3d9",
+      "name": "Respond 200 Blocked by Policy (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        2180
+      ],
+      "notes": "dispatch recorded, never executed (review-only or policy block)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "id": "2d079bdf-773a-51c2-8c9d-989294a6e7cf",
+      "name": "Respond 409 Delivery Replayed (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        2339
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 413
+        }
+      },
+      "id": "d2fef628-ff9a-5470-889c-9b2f393722df",
+      "name": "Respond 413 Payload Too Large (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        2500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, outcome: ($json.body || {}).outcome || 'error', reason_code: ($json.body || {}).reason_code || 'WORKER_ERROR', reason: ($json.body || {}).reason || ('worker returned HTTP ' + $json.statusCode), errors: ($json.body || {}).errors || [], expected_key: ($json.body || {}).expected_key || null, retry_after_s: ($json.body || {}).retry_after_s || null, receiver_execution_id: $execution.id }) }}",
+        "options": {
+          "responseCode": 503
+        }
+      },
+      "id": "28961c86-3f50-5100-9483-a34a98af226b",
+      "name": "Respond 503 Context Credential Missing (Actions)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        2660
+      ],
+      "notes": "GitHub read credential missing: fail closed, nothing started",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "GitHub Actions Webhook (POST /prqa/actions)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Actions Intake (raw body + X-PRQA headers)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Actions Intake (raw body + X-PRQA headers)": {
+      "main": [
+        [
+          {
+            "node": "Verify, Validate & Claim (worker /webhook/actions/intake)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify, Validate & Claim (worker /webhook/actions/intake)": {
+      "main": [
+        [
+          {
+            "node": "Route Intake Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Intake Outcome": {
+      "main": [
+        [
+          {
+            "node": "Build Pipeline Input (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Duplicate (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401 Unauthorized (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 403 Repository Not Registered (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 422 Invalid Request (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 429 Rate Limited (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Lifecycle Cancelled (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Blocked by Policy (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 409 Delivery Replayed (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 413 Payload Too Large (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 503 Context Credential Missing (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 503 Worker Unavailable (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Pipeline Input (Actions)": {
+      "main": [
+        [
+          {
+            "node": "Respond 202 Accepted (Actions)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 202 Accepted (Actions)": {
+      "main": [
+        [
+          {
+            "node": "Start Main Pipeline (async)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Webhook (POST /prqa/github)": {
+      "main": [
+        [
+          {
+            "node": "Verify HMAC Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify HMAC Signature": {
+      "main": [
+        [
+          {
+            "node": "Signature Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature Valid?": {
+      "main": [
+        [
+          {
+            "node": "Validate Event & Extract PR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401 Invalid Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Event & Extract PR": {
+      "main": [
+        [
+          {
+            "node": "Eligible Event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eligible Event?": {
+      "main": [
+        [
+          {
+            "node": "Claim Delivery ID (worker /deliveries/claim)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lifecycle Event? (label removed / closed / new SHA)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lifecycle Event? (label removed / closed / new SHA)": {
+      "main": [
+        [
+          {
+            "node": "Cancel Active Jobs (worker /jobs/cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Active Jobs (worker /jobs/cancel)": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Lifecycle Handled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Delivery ID (worker /deliveries/claim)": {
+      "main": [
+        [
+          {
+            "node": "Dedupe by Delivery ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe by Delivery ID": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Delivery?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Delivery?": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 202 Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 202 Accepted": {
+      "main": [
+        [
+          {
+            "node": "Start Main Pipeline (async)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "d4e46bdf-aa36-5be5-9c73-e971fb8e147c"
+}

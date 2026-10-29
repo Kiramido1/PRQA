@@ -1,0 +1,20 @@
+{
+  "_synthetic": "SYNTHETIC FIXTURE — a labeled event for a NON-synthetic repository name that is not approved. The policy gate must BLOCK it (review-only mode + repository disabled). The repository name is a placeholder; no request may ever be sent for it.",
+  "action": "labeled",
+  "number": 7,
+  "label": { "id": 2, "name": "qa-test:smoke", "color": "0e8a16" },
+  "pull_request": {
+    "number": 7,
+    "title": "Placeholder PR on an unapproved repository (SYNTHETIC)",
+    "state": "open",
+    "draft": false,
+    "html_url": "https://github.com/your-org/your-first-real-repo/pull/7",
+    "user": { "login": "placeholder-user" },
+    "body": "This payload exists only to prove that real-looking jobs are rejected in Phase 1.",
+    "labels": [ { "name": "qa-test:smoke" } ],
+    "head": { "ref": "feature/x", "sha": "1111111111111111111111111111111111111111", "repo": { "full_name": "your-org/your-first-real-repo", "fork": false } },
+    "base": { "ref": "main", "sha": "2222222222222222222222222222222222222222" }
+  },
+  "repository": { "full_name": "your-org/your-first-real-repo", "name": "your-first-real-repo", "owner": { "login": "your-org" }, "default_branch": "main" },
+  "sender": { "login": "placeholder-user" }
+}

@@ -1,0 +1,300 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" width="1000" height="470" role="img" aria-labelledby="t d">
+  <title id="t">PRQA pipeline</title>
+  <desc id="d">Animated: a pull request labelled "to be test" moves through Label, Discover, Claim, Prepare, Prompt, Gate, Execute and Report.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#111b30"/></linearGradient>
+    <linearGradient id="trail" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+    <radialGradient id="pk"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#67e8f9"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#1f2a44"/></pattern>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="6" result="b"/>
+      <feFlood flood-color="#22d3ee" flood-opacity=".55"/><feComposite in2="b" operator="in"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <style>
+  :root { --card: #121a2b; --card-on: #13253a; --line: #26324d; --done-line: #2f6f55; --active: #22d3ee; --done: #34d399;
+          --text: #e6edf3; --muted: #7d8aa5; }
+  text { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .brand { fill: var(--text); font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+  .brand-sub { fill: var(--muted); font-size: 12px; }
+  .live { fill: #f43f5e; font-size: 11px; font-weight: 700; letter-spacing: .14em; }
+  .num { font: 700 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .14em; fill: var(--muted); }
+  .title { fill: var(--text); font-size: 20px; font-weight: 700; }
+  .sub { fill: var(--muted); font-size: 12.5px; }
+  .st { font: 600 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .st-wait { fill: var(--muted); } .st-run { fill: var(--active); opacity: 0; } .st-done { fill: var(--done); opacity: 0; }
+  .rail { fill: none; stroke: #1e2a44; stroke-width: 3; stroke-dasharray: 2 7; stroke-linecap: round; }
+  .progress { fill: none; stroke: url(#trail); stroke-width: 3; stroke-linecap: round; }
+  .term { fill: #0a0f1a; stroke: #1f2a44; }
+  .logline { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #c9d4e5; }
+  .prompt { fill: var(--active); font-weight: 700; }
+  .summary text { font: 700 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  .pulse { animation: blink 1.4s ease-in-out infinite; }
+  
+  @keyframes f0 { 0%, 1.25% { stroke: var(--line); fill: var(--card); filter: none; }
+    2.50%, 9.50% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    10.75%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n0 { 0%, 1.25% { fill: var(--muted); } 2.50%, 9.50% { fill: var(--active); }
+    10.75%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w0 { 0%, 1.25% { opacity: 1; } 2.00%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r0 { 0%, 1.50% { opacity: 0; } 2.50%, 9.50% { opacity: 1; } 10.50%, 100% { opacity: 0; } }
+  @keyframes d0 { 0%, 9.50% { opacity: 0; } 10.75%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l0 { 0%, 1.75% { opacity: 0; transform: translateY(6px); } 3.25%, 11.75% { opacity: 1; transform: none; }
+    12.50%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s0 .frame { animation: f0 20.0s linear infinite; }
+  .s0 .num { animation: n0 20.0s linear infinite; }
+  .s0 .st-wait { animation: w0 20.0s linear infinite; }
+  .s0 .st-run { animation: r0 20.0s linear infinite; }
+  .s0 .st-done { animation: d0 20.0s linear infinite; }
+  .log0 { animation: l0 20.0s ease-out infinite; opacity: 0; }
+  @keyframes f1 { 0%, 11.75% { stroke: var(--line); fill: var(--card); filter: none; }
+    13.00%, 20.00% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    21.25%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n1 { 0%, 11.75% { fill: var(--muted); } 13.00%, 20.00% { fill: var(--active); }
+    21.25%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w1 { 0%, 11.75% { opacity: 1; } 12.50%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r1 { 0%, 12.00% { opacity: 0; } 13.00%, 20.00% { opacity: 1; } 21.00%, 100% { opacity: 0; } }
+  @keyframes d1 { 0%, 20.00% { opacity: 0; } 21.25%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l1 { 0%, 12.25% { opacity: 0; transform: translateY(6px); } 13.75%, 22.25% { opacity: 1; transform: none; }
+    23.00%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s1 .frame { animation: f1 20.0s linear infinite; }
+  .s1 .num { animation: n1 20.0s linear infinite; }
+  .s1 .st-wait { animation: w1 20.0s linear infinite; }
+  .s1 .st-run { animation: r1 20.0s linear infinite; }
+  .s1 .st-done { animation: d1 20.0s linear infinite; }
+  .log1 { animation: l1 20.0s ease-out infinite; opacity: 0; }
+  @keyframes f2 { 0%, 22.25% { stroke: var(--line); fill: var(--card); filter: none; }
+    23.50%, 30.50% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    31.75%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n2 { 0%, 22.25% { fill: var(--muted); } 23.50%, 30.50% { fill: var(--active); }
+    31.75%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w2 { 0%, 22.25% { opacity: 1; } 23.00%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r2 { 0%, 22.50% { opacity: 0; } 23.50%, 30.50% { opacity: 1; } 31.50%, 100% { opacity: 0; } }
+  @keyframes d2 { 0%, 30.50% { opacity: 0; } 31.75%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l2 { 0%, 22.75% { opacity: 0; transform: translateY(6px); } 24.25%, 32.75% { opacity: 1; transform: none; }
+    33.50%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s2 .frame { animation: f2 20.0s linear infinite; }
+  .s2 .num { animation: n2 20.0s linear infinite; }
+  .s2 .st-wait { animation: w2 20.0s linear infinite; }
+  .s2 .st-run { animation: r2 20.0s linear infinite; }
+  .s2 .st-done { animation: d2 20.0s linear infinite; }
+  .log2 { animation: l2 20.0s ease-out infinite; opacity: 0; }
+  @keyframes f3 { 0%, 32.75% { stroke: var(--line); fill: var(--card); filter: none; }
+    34.00%, 41.00% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    42.25%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n3 { 0%, 32.75% { fill: var(--muted); } 34.00%, 41.00% { fill: var(--active); }
+    42.25%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w3 { 0%, 32.75% { opacity: 1; } 33.50%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r3 { 0%, 33.00% { opacity: 0; } 34.00%, 41.00% { opacity: 1; } 42.00%, 100% { opacity: 0; } }
+  @keyframes d3 { 0%, 41.00% { opacity: 0; } 42.25%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l3 { 0%, 33.25% { opacity: 0; transform: translateY(6px); } 34.75%, 43.25% { opacity: 1; transform: none; }
+    44.00%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s3 .frame { animation: f3 20.0s linear infinite; }
+  .s3 .num { animation: n3 20.0s linear infinite; }
+  .s3 .st-wait { animation: w3 20.0s linear infinite; }
+  .s3 .st-run { animation: r3 20.0s linear infinite; }
+  .s3 .st-done { animation: d3 20.0s linear infinite; }
+  .log3 { animation: l3 20.0s ease-out infinite; opacity: 0; }
+  @keyframes f4 { 0%, 43.25% { stroke: var(--line); fill: var(--card); filter: none; }
+    44.50%, 51.50% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    52.75%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n4 { 0%, 43.25% { fill: var(--muted); } 44.50%, 51.50% { fill: var(--active); }
+    52.75%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w4 { 0%, 43.25% { opacity: 1; } 44.00%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r4 { 0%, 43.50% { opacity: 0; } 44.50%, 51.50% { opacity: 1; } 52.50%, 100% { opacity: 0; } }
+  @keyframes d4 { 0%, 51.50% { opacity: 0; } 52.75%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l4 { 0%, 43.75% { opacity: 0; transform: translateY(6px); } 45.25%, 53.75% { opacity: 1; transform: none; }
+    54.50%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s4 .frame { animation: f4 20.0s linear infinite; }
+  .s4 .num { animation: n4 20.0s linear infinite; }
+  .s4 .st-wait { animation: w4 20.0s linear infinite; }
+  .s4 .st-run { animation: r4 20.0s linear infinite; }
+  .s4 .st-done { animation: d4 20.0s linear infinite; }
+  .log4 { animation: l4 20.0s ease-out infinite; opacity: 0; }
+  @keyframes f5 { 0%, 53.75% { stroke: var(--line); fill: var(--card); filter: none; }
+    55.00%, 62.00% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    63.25%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n5 { 0%, 53.75% { fill: var(--muted); } 55.00%, 62.00% { fill: var(--active); }
+    63.25%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w5 { 0%, 53.75% { opacity: 1; } 54.50%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r5 { 0%, 54.00% { opacity: 0; } 55.00%, 62.00% { opacity: 1; } 63.00%, 100% { opacity: 0; } }
+  @keyframes d5 { 0%, 62.00% { opacity: 0; } 63.25%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l5 { 0%, 54.25% { opacity: 0; transform: translateY(6px); } 55.75%, 64.25% { opacity: 1; transform: none; }
+    65.00%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s5 .frame { animation: f5 20.0s linear infinite; }
+  .s5 .num { animation: n5 20.0s linear infinite; }
+  .s5 .st-wait { animation: w5 20.0s linear infinite; }
+  .s5 .st-run { animation: r5 20.0s linear infinite; }
+  .s5 .st-done { animation: d5 20.0s linear infinite; }
+  .log5 { animation: l5 20.0s ease-out infinite; opacity: 0; }
+  @keyframes f6 { 0%, 64.25% { stroke: var(--line); fill: var(--card); filter: none; }
+    65.50%, 72.50% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    73.75%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n6 { 0%, 64.25% { fill: var(--muted); } 65.50%, 72.50% { fill: var(--active); }
+    73.75%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w6 { 0%, 64.25% { opacity: 1; } 65.00%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r6 { 0%, 64.50% { opacity: 0; } 65.50%, 72.50% { opacity: 1; } 73.50%, 100% { opacity: 0; } }
+  @keyframes d6 { 0%, 72.50% { opacity: 0; } 73.75%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l6 { 0%, 64.75% { opacity: 0; transform: translateY(6px); } 66.25%, 74.75% { opacity: 1; transform: none; }
+    75.50%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s6 .frame { animation: f6 20.0s linear infinite; }
+  .s6 .num { animation: n6 20.0s linear infinite; }
+  .s6 .st-wait { animation: w6 20.0s linear infinite; }
+  .s6 .st-run { animation: r6 20.0s linear infinite; }
+  .s6 .st-done { animation: d6 20.0s linear infinite; }
+  .log6 { animation: l6 20.0s ease-out infinite; opacity: 0; }
+  @keyframes f7 { 0%, 74.75% { stroke: var(--line); fill: var(--card); filter: none; }
+    76.00%, 83.00% { stroke: var(--active); fill: var(--card-on); filter: url(#glow); }
+    84.25%, 97.0% { stroke: var(--done-line); fill: var(--card); filter: none; }
+    99.5%, 100% { stroke: var(--line); fill: var(--card); filter: none; } }
+  @keyframes n7 { 0%, 74.75% { fill: var(--muted); } 76.00%, 83.00% { fill: var(--active); }
+    84.25%, 97.0% { fill: var(--done); } 99.5%, 100% { fill: var(--muted); } }
+  @keyframes w7 { 0%, 74.75% { opacity: 1; } 75.50%, 99.4% { opacity: 0; } 99.5%, 100% { opacity: 1; } }
+  @keyframes r7 { 0%, 75.00% { opacity: 0; } 76.00%, 83.00% { opacity: 1; } 84.00%, 100% { opacity: 0; } }
+  @keyframes d7 { 0%, 83.00% { opacity: 0; } 84.25%, 97.0% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+  @keyframes l7 { 0%, 75.25% { opacity: 0; transform: translateY(6px); } 76.75%, 85.25% { opacity: 1; transform: none; }
+    86.00%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .s7 .frame { animation: f7 20.0s linear infinite; }
+  .s7 .num { animation: n7 20.0s linear infinite; }
+  .s7 .st-wait { animation: w7 20.0s linear infinite; }
+  .s7 .st-run { animation: r7 20.0s linear infinite; }
+  .s7 .st-done { animation: d7 20.0s linear infinite; }
+  .log7 { animation: l7 20.0s ease-out infinite; opacity: 0; }
+  @keyframes sum { 0%, 84.50% { opacity: 0; transform: translateY(6px); } 86.50%, 97.50% { opacity: 1; transform: none; }
+    99.00%, 100% { opacity: 0; } }
+  .summary { animation: sum 20.0s ease-out infinite; opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .st-done, .log7, .summary { opacity: 1 !important; } .st-wait, .log0 { opacity: 0; } }
+  </style>
+  <rect width="1000" height="470" rx="18" fill="url(#bg)"/>
+  <rect width="1000" height="470" rx="18" fill="url(#dots)" opacity=".7"/>
+  <text class="brand" x="40" y="50">PRQA</text>
+  <text class="brand-sub" x="92" y="50">label → tested → reported · one pull request, end to end</text>
+  <circle class="pulse" cx="905" cy="45" r="4.5" fill="#f43f5e"/>
+  <text class="live" x="918" y="49">LIVE</text>
+
+  <path class="rail" d="M140,144 H860 V304 H140"/>
+  <path class="progress" d="M140,144 H860 V304 H140" pathLength="1" stroke-dasharray="1 1">
+    <animate attributeName="stroke-dashoffset" dur="20.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0.0000;0.0200;0.0950;0.1250;0.2000;0.2300;0.3050;0.3350;0.4100;0.4400;0.5150;0.5450;0.6200;0.6500;0.7250;0.7550;0.8300;1.0000" values="1.0000;1.0000;1.0000;0.8500;0.8500;0.7000;0.7000;0.5500;0.5500;0.4500;0.4500;0.3000;0.3000;0.1500;0.1500;0.0000;0.0000;0.0000"/>
+    <animate attributeName="opacity" dur="20.0s" repeatCount="indefinite" keyTimes="0;0.97;0.995;1" values="1;1;0;0"/>
+  </path>
+  <g>
+    <circle r="16" fill="url(#pk)" opacity=".55" filter="url(#soft)">
+      <animateMotion dur="20.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0.0000;0.0200;0.0950;0.1250;0.2000;0.2300;0.3050;0.3350;0.4100;0.4400;0.5150;0.5450;0.6200;0.6500;0.7250;0.7550;0.8300;1.0000" keyPoints="0.0000;0.0000;0.0000;0.1500;0.1500;0.3000;0.3000;0.4500;0.4500;0.5500;0.5500;0.7000;0.7000;0.8500;0.8500;1.0000;1.0000;1.0000" path="M140,144 H860 V304 H140"/>
+    </circle>
+    <circle r="6" fill="#ecfeff">
+      <animateMotion dur="20.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0.0000;0.0200;0.0950;0.1250;0.2000;0.2300;0.3050;0.3350;0.4100;0.4400;0.5150;0.5450;0.6200;0.6500;0.7250;0.7550;0.8300;1.0000" keyPoints="0.0000;0.0000;0.0000;0.1500;0.1500;0.3000;0.3000;0.4500;0.4500;0.5500;0.5500;0.7000;0.7000;0.8500;0.8500;1.0000;1.0000;1.0000" path="M140,144 H860 V304 H140"/>
+    </circle>
+  </g>
+  
+  <g class="s0">
+    <rect class="frame" x="40" y="92" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="58" y="120">STAGE 01</text>
+    <text class="title" x="58" y="148">Label</text>
+    <text class="sub" x="58" y="170">to be test on a PR</text>
+    <g class="state" transform="translate(222 120)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+  <g class="s1">
+    <rect class="frame" x="280" y="92" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="298" y="120">STAGE 02</text>
+    <text class="title" x="298" y="148">Discover</text>
+    <text class="sub" x="298" y="170">n8n checks every minute</text>
+    <g class="state" transform="translate(462 120)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+  <g class="s2">
+    <rect class="frame" x="520" y="92" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="538" y="120">STAGE 03</text>
+    <text class="title" x="538" y="148">Claim</text>
+    <text class="sub" x="538" y="170">once per PR head SHA</text>
+    <g class="state" transform="translate(702 120)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+  <g class="s3">
+    <rect class="frame" x="760" y="92" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="778" y="120">STAGE 04</text>
+    <text class="title" x="778" y="148">Prepare</text>
+    <text class="sub" x="778" y="170">disposable API + Postgres</text>
+    <g class="state" transform="translate(942 120)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+  <g class="s4">
+    <rect class="frame" x="760" y="252" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="778" y="280">STAGE 05</text>
+    <text class="title" x="778" y="308">Prompt</text>
+    <text class="sub" x="778" y="330">Groq · 3 staged calls</text>
+    <g class="state" transform="translate(942 280)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+  <g class="s5">
+    <rect class="frame" x="520" y="252" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="538" y="280">STAGE 06</text>
+    <text class="title" x="538" y="308">Gate</text>
+    <text class="sub" x="538" y="330">rubric ≥ 85 · hard fails</text>
+    <g class="state" transform="translate(702 280)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+  <g class="s6">
+    <rect class="frame" x="280" y="252" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="298" y="280">STAGE 07</text>
+    <text class="title" x="298" y="308">Execute</text>
+    <text class="sub" x="298" y="330">Claude Code · sandboxed</text>
+    <g class="state" transform="translate(462 280)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+  <g class="s7">
+    <rect class="frame" x="40" y="252" width="200" height="104" rx="14" stroke-width="1.5"/>
+    <text class="num" x="58" y="280">STAGE 08</text>
+    <text class="title" x="58" y="308">Report</text>
+    <text class="sub" x="58" y="330">report.md + Discord</text>
+    <g class="state" transform="translate(222 280)">
+      <text class="st st-wait" text-anchor="end">waiting</text>
+      <text class="st st-run" text-anchor="end">● running</text>
+      <text class="st st-done" text-anchor="end">✓ done</text>
+    </g>
+  </g>
+
+  <rect class="term" x="40" y="398" width="920" height="48" rx="11"/>
+  <circle cx="62" cy="422" r="4" fill="#f43f5e"/><circle cx="76" cy="422" r="4" fill="#f59e0b"/><circle cx="90" cy="422" r="4" fill="#10b981"/>
+  <g>
+    <text class="logline log0" x="110" y="427"><tspan class="prompt">❯</tspan> gh · PR #2 labelled ‘to be test’ · head 292ad89</text>
+    <text class="logline log1" x="110" y="427"><tspan class="prompt">❯</tspan> n8n → POST /stage/discover · eligible: [#2]</text>
+    <text class="logline log2" x="110" y="427"><tspan class="prompt">❯</tspan> claimed Amenly-Product#2@292ad89 · run state locked</text>
+    <text class="logline log3" x="110" y="427"><tspan class="prompt">❯</tspan> disposable env up · OpenAPI loaded · identity probe ok</text>
+    <text class="logline log4" x="110" y="427"><tspan class="prompt">❯</tspan> Groq: scope ✓  coverage ✓  sections ✓ · within 8k TPM</text>
+    <text class="logline log5" x="110" y="427"><tspan class="prompt">❯</tspan> quality gate 98 / 85 → ACCEPTED · hard fails: none</text>
+    <text class="logline log6" x="110" y="427"><tspan class="prompt">❯</tspan> claude -p · 30 scenarios in 11 sessions · curl only</text>
+    <text class="logline log7" x="110" y="427"><tspan class="prompt">❯</tspan> report.md written · environment destroyed · Discord delivered</text>
+  </g>
+  <g class="summary">
+    <text x="110" y="427"><tspan fill="#34d399">✓ run executed</tspan><tspan fill="#c9d4e5"> · 30 scenarios · </tspan><tspan fill="#34d399">14 pass</tspan><tspan fill="#c9d4e5"> · </tspan><tspan fill="#fb7185">11 fail</tspan><tspan fill="#c9d4e5"> · 5 n/a · verdict posted to Discord</tspan></text>
+  </g>
+</svg>

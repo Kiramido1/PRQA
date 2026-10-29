@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prqa.example.test/schemas/qa-result/1.0/qa-result.schema.json",
+  "title": "PR QA Pilot — OpenCode QA result",
+  "description": "Machine-readable result that the OpenCode worker must produce for every job (qa-result.json). Mirrors the Final QA Report structure of the reference prompt (Phase 10, sections A–H).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result_version",
+    "synthetic",
+    "job_id",
+    "repository",
+    "pr",
+    "environment",
+    "executed_by",
+    "summary",
+    "coverage_matrix",
+    "test_cases",
+    "defects",
+    "blockers",
+    "recommendation"
+  ],
+  "properties": {
+    "result_version": { "const": "1.0" },
+    "synthetic": {
+      "type": "boolean",
+      "description": "true when the result was produced by the mock executor from a fixture. Reports must display this prominently."
+    },
+    "job_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{3,127}$" },
+    "repository": { "type": "string", "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$" },
+    "pr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "title", "head_sha"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string", "maxLength": 300 },
+        "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "base_ref": { "type": "string", "maxLength": 255 },
+        "head_ref": { "type": "string", "maxLength": 255 },
+        "url": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "base_url_redacted"],
+      "properties": {
+        "name": { "enum": ["mock", "local", "staging", "preview"] },
+        "base_url_redacted": { "type": "string", "maxLength": 300 }
+      }
+    },
+    "executed_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "mode"],
+      "properties": {
+        "engine": { "enum": ["opencode", "claude_code", "mock_executor"] },
+        "mode": { "enum": ["mock", "live"] },
+        "model": { "type": "string", "maxLength": 120 },
+        "prompt_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "prompt_source": { "enum": ["llm", "reference_fallback", "fixture"] },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall_status", "total", "passed", "failed", "blocked", "not_applicable"],
+      "properties": {
+        "overall_status": { "enum": ["PASS", "PASS_WITH_KNOWN_ISSUES", "FAIL", "INCONCLUSIVE"] },
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 },
+        "not_applicable": { "type": "integer", "minimum": 0 },
+        "executive_summary": { "type": "string", "maxLength": 4000 }
+      }
+    },
+    "coverage_matrix": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["area", "planned", "passed", "failed", "blocked", "not_applicable"],
+        "properties": {
+          "area": { "type": "string", "maxLength": 80 },
+          "planned": { "type": "integer", "minimum": 0 },
+          "passed": { "type": "integer", "minimum": 0 },
+          "failed": { "type": "integer", "minimum": 0 },
+          "blocked": { "type": "integer", "minimum": 0 },
+          "not_applicable": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "test_cases": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "scenario", "endpoint", "expected", "actual", "status"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*-[0-9]{3}$" },
+          "area": { "type": "string", "maxLength": 80 },
+          "scenario": { "type": "string", "maxLength": 300 },
+          "endpoint": { "type": "string", "maxLength": 300 },
+          "expected": { "type": "string", "maxLength": 1000 },
+          "actual": { "type": "string", "maxLength": 1000 },
+          "status": { "enum": ["PASS", "FAIL", "BLOCKED", "NOT_APPLICABLE"] },
+          "http_status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+          "evidence": { "type": "string", "maxLength": 300 },
+          "defect_ref": { "type": ["string", "null"], "maxLength": 40 }
+        }
+      }
+    },
+    "defects": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "severity", "endpoint", "expected", "actual", "origin"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^DEF-[0-9]{3}$" },
+          "title": { "type": "string", "maxLength": 200 },
+          "severity": { "enum": ["P0", "P1", "P2", "P3"] },
+          "severity_rationale": { "type": "string", "maxLength": 1000 },
+          "endpoint": { "type": "string", "maxLength": 300 },
+          "preconditions": { "type": "string", "maxLength": 1000 },
+          "repro_curl": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Secrets must already be replaced by placeholders such as $TOKEN. The worker redacts again before publishing."
+          },
+          "expected": { "type": "string", "maxLength": 1000 },
+          "actual": { "type": "string", "maxLength": 1000 },
+          "http_status": { "type": ["integer", "null"] },
+          "impact": { "type": "string", "maxLength": 1000 },
+          "origin": { "enum": ["introduced_by_pr", "pre_existing", "environment", "test_data", "ambiguous_contract", "unknown"] },
+          "test_case_ids": { "type": "array", "maxItems": 20, "items": { "type": "string" } }
+        }
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "type": "string", "maxLength": 500 }
+    },
+    "regression_summary": { "type": "string", "maxLength": 4000 },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "rationale"],
+      "properties": {
+        "verdict": { "enum": ["PASS", "PASS_WITH_KNOWN_ISSUES", "FAIL", "INCONCLUSIVE"] },
+        "rationale": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "directory": { "type": "string", "maxLength": 300 },
+        "files": { "type": "array", "maxItems": 500, "items": { "type": "string", "maxLength": 300 } }
+      }
+    },
+    "report_markdown": { "type": "string", "maxLength": 200000 }
+  }
+}

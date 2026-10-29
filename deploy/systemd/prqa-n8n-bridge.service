@@ -1,0 +1,22 @@
+[Unit]
+Description=PRQA n8n bridge (n8n -> pipeline stages on this host)
+# the project lives on the external drive (mounted at login): start only when it is mounted and the secrets file exists
+ConditionPathExists=@PRQA_ROOT@/scripts/services/prqa_n8n_bridge.py
+ConditionPathExists=%h/.config/prqa/secrets.env
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=@PRQA_ROOT@
+Environment=PYTHONUNBUFFERED=1
+# only the bridge token is exported (read at start, never on the command line); the stages read the other secrets from
+# the secrets file themselves. $$ passes a literal $ to the shell.
+ExecStart=/bin/sh -c 'PRQA_N8N_BRIDGE_TOKEN="$$(sed -n "s/^PRQA_N8N_BRIDGE_TOKEN=//p" "%h/.config/prqa/secrets.env")" exec /usr/bin/python3 -u scripts/services/prqa_n8n_bridge.py'
+Restart=on-failure
+RestartSec=10
+# a running stage (disposable env, up to an hour) is not killed with the bridge
+KillMode=process
+
+[Install]
+WantedBy=default.target

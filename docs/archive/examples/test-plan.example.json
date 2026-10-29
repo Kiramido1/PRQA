@@ -1,0 +1,197 @@
+{
+  "plan_version": "1.0",
+  "plan_id": "plan-acme-orders-pr42-a1b2c3d-01",
+  "project_id": "acme-orders",
+  "pr": {
+    "repository": "example-org/orders-service",
+    "number": 42,
+    "base_ref": "main",
+    "head_ref": "feature/order-status-filter",
+    "base_sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+    "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+  },
+  "test_level": "standard",
+  "generated_by": {
+    "provider": "manual_chatgpt",
+    "model": "ChatGPT Free (web interface; model not recorded)",
+    "prompt_version": "v1",
+    "generated_at": "2026-10-18T14:20:00Z"
+  },
+  "scope_summary": "PR #42 adds an optional 'status' query filter to GET /v1/orders and a required 'reason' field to POST /v1/orders/{orderId}/cancel. Tests cover the new filter, validation of the new field, tenant isolation on the changed endpoints, and regression of unfiltered listing.",
+  "assumptions": [
+    "Fixture order ord_fixture_open_001 exists for tenant A in status 'open' and may be cancelled in the staging environment.",
+    "Allowed status values are taken from the OpenAPI enum OrderStatus: open, paid, shipped, cancelled."
+  ],
+  "out_of_scope": [
+    "Performance and load characteristics of the listing endpoint.",
+    "Database migration correctness (not observable through the API)."
+  ],
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "title": "List orders filtered by status=open",
+      "purpose": "Verify the new status filter returns only orders in the requested status.",
+      "scope_ref": "openapi:GET /v1/orders (query param status)",
+      "category": "happy_path",
+      "priority": "P1",
+      "auth_profile": "tenant_a_user",
+      "request": {
+        "method": "GET",
+        "path": "/v1/orders",
+        "query": { "status": "open", "limit": 20 }
+      },
+      "expect": {
+        "status": 200,
+        "json_schema": { "$ref": "#/components/schemas/OrderList" },
+        "assertions": [
+          { "target": "body", "path": "$.data", "op": "type_is", "value": "array" },
+          { "target": "body", "path": "$.data", "op": "length_lte", "value": 20 },
+          { "target": "header", "path": "Content-Type", "op": "contains", "value": "application/json" }
+        ],
+        "max_duration_ms": 2000
+      },
+      "notes": "Schema v1.0 has no wildcard JSONPath, so per-item status checks are not expressible here; TC-002 checks the first item deterministically."
+    },
+    {
+      "id": "TC-002",
+      "title": "Filtered list first item has requested status",
+      "purpose": "Deterministically check that the first returned order matches the filter value.",
+      "scope_ref": "diff:src/orders/routes.py",
+      "category": "business_rule",
+      "priority": "P1",
+      "auth_profile": "tenant_a_user",
+      "depends_on": ["TC-001"],
+      "request": {
+        "method": "GET",
+        "path": "/v1/orders",
+        "query": { "status": "open", "limit": 1 }
+      },
+      "expect": {
+        "status": 200,
+        "assertions": [
+          { "target": "body", "path": "$.data[0].status", "op": "equals", "value": "open" }
+        ]
+      }
+    },
+    {
+      "id": "TC-003",
+      "title": "Reject unknown status filter value",
+      "purpose": "Verify invalid enum values for the new filter are rejected with a validation error instead of being ignored.",
+      "scope_ref": "openapi:GET /v1/orders (query param status)",
+      "category": "validation",
+      "priority": "P1",
+      "auth_profile": "tenant_a_user",
+      "request": {
+        "method": "GET",
+        "path": "/v1/orders",
+        "query": { "status": "not-a-status" }
+      },
+      "expect": {
+        "status": [400, 422],
+        "json_schema": { "$ref": "#/components/schemas/Error" },
+        "assertions": [
+          { "target": "body", "path": "$.error.code", "op": "exists" }
+        ]
+      }
+    },
+    {
+      "id": "TC-004",
+      "title": "Unfiltered listing still works (regression)",
+      "purpose": "Verify existing clients that do not send the status filter still receive a valid list.",
+      "scope_ref": "regression:GET /v1/orders",
+      "category": "regression",
+      "priority": "P1",
+      "auth_profile": "tenant_a_user",
+      "request": {
+        "method": "GET",
+        "path": "/v1/orders",
+        "query": { "limit": 5 }
+      },
+      "expect": {
+        "status": 200,
+        "json_schema": { "$ref": "#/components/schemas/OrderList" },
+        "assertions": [
+          { "target": "body", "path": "$.data", "op": "length_lte", "value": 5 }
+        ]
+      }
+    },
+    {
+      "id": "TC-005",
+      "title": "Listing without credentials is rejected",
+      "purpose": "Verify the changed listing endpoint still requires authentication.",
+      "scope_ref": "openapi:GET /v1/orders (security)",
+      "category": "authentication",
+      "priority": "P1",
+      "auth_profile": "anonymous",
+      "request": {
+        "method": "GET",
+        "path": "/v1/orders",
+        "query": { "status": "open" }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "id": "TC-006",
+      "title": "Cancel order without reason is rejected",
+      "purpose": "Verify the new required 'reason' field is enforced on cancellation.",
+      "scope_ref": "openapi:POST /v1/orders/{orderId}/cancel (body.reason)",
+      "category": "missing_null",
+      "priority": "P1",
+      "auth_profile": "tenant_a_user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/orders/{orderId}/cancel",
+        "path_params": { "orderId": "ord_fixture_open_001" },
+        "headers": { "Content-Type": "application/json" },
+        "body": {}
+      },
+      "expect": {
+        "status": [400, 422],
+        "assertions": [
+          { "target": "body", "path": "$.error.code", "op": "exists" }
+        ]
+      }
+    },
+    {
+      "id": "TC-007",
+      "title": "Tenant B cannot cancel tenant A order",
+      "purpose": "Verify tenant isolation on the changed cancellation endpoint; a foreign tenant must not learn about or modify the order.",
+      "scope_ref": "openapi:POST /v1/orders/{orderId}/cancel (authorization)",
+      "category": "tenant_isolation",
+      "priority": "P1",
+      "auth_profile": "tenant_b_user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/orders/{orderId}/cancel",
+        "path_params": { "orderId": "ord_fixture_open_001" },
+        "headers": { "Content-Type": "application/json" },
+        "body": { "reason": "qa-tenant-isolation-check" }
+      },
+      "expect": {
+        "status": [403, 404]
+      }
+    },
+    {
+      "id": "TC-008",
+      "title": "Reason longer than documented maximum is rejected",
+      "purpose": "Verify the documented maxLength (500) of 'reason' is enforced at the boundary + 1.",
+      "scope_ref": "openapi:POST /v1/orders/{orderId}/cancel (body.reason maxLength)",
+      "category": "boundary",
+      "priority": "P2",
+      "auth_profile": "tenant_a_user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/orders/{orderId}/cancel",
+        "path_params": { "orderId": "ord_fixture_open_001" },
+        "headers": { "Content-Type": "application/json" },
+        "body": { "reason": "{{generate.string:501}}" }
+      },
+      "expect": {
+        "status": [400, 422]
+      },
+      "notes": "The runner expands {{generate.string:N}} into an N-character ASCII string at execution time; no other template functions are allowed."
+    }
+  ]
+}

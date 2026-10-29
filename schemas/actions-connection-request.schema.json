@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prqa.example.test/schemas/actions-connection-request/2.0/actions-connection-request.schema.json",
+  "title": "PR QA Pilot — per-repository connection dispatch sent by .github/workflows/prqa-to-be-test.yml (POST /webhook/prqa/actions)",
+  "description": "Body signed with the CONNECTION's own secret: X-PRQA-Signature = sha256=HMAC-SHA256(<connection secret>, '<X-PRQA-Timestamp>.<raw body>'). Only identifiers, SHAs, refs and event metadata: no PR title, body, file names or patches (PRQA fetches PR context itself). Every value is UNTRUSTED until the worker has validated it; the connection_id selects the secret but authenticates nothing on its own.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "type", "connection_id", "repository", "pull_request", "event", "delivery", "actions"],
+  "properties": {
+    "schema_version": { "const": "2.0" },
+    "type": { "const": "prqa.to_be_test.dispatch" },
+    "connection_id": { "type": "string", "pattern": "^prqa_c_[0-9a-f]{24}$" },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["full_name"],
+      "properties": {
+        "full_name": { "type": "string", "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$" },
+        "id": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "state", "draft", "head", "base"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+        "state": { "enum": ["open", "closed"] },
+        "draft": { "type": "boolean" },
+        "head": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha", "ref", "repo_full_name"],
+          "properties": {
+            "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "ref": { "type": "string", "maxLength": 255 },
+            "repo_full_name": { "type": ["string", "null"], "maxLength": 140 }
+          }
+        },
+        "base": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha", "ref"],
+          "properties": {
+            "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "ref": { "type": "string", "maxLength": 255 }
+          }
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "action", "label"],
+      "properties": {
+        "name": { "const": "pull_request" },
+        "action": { "enum": ["opened", "reopened", "labeled", "synchronize", "ready_for_review"] },
+        "label": { "type": "string", "maxLength": 100, "description": "the exact trigger label that caused the dispatch (the applied label for 'labeled', the label still on the PR otherwise)" },
+        "sender_login": { "type": ["string", "null"], "maxLength": 100, "description": "UNTRUSTED metadata; never used for authorization" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "created_at"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^gha-[0-9]{1,20}-[0-9]{1,5}$" },
+        "created_at": { "type": "integer", "minimum": 1000000000, "maximum": 99999999999 }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "run_attempt"],
+      "properties": {
+        "run_id": { "type": "string", "pattern": "^[0-9]{1,20}$" },
+        "run_attempt": { "type": "string", "pattern": "^[0-9]{1,5}$" },
+        "workflow": { "type": "string", "maxLength": 200 },
+        "client_version": { "type": "string", "maxLength": 20 }
+      }
+    }
+  }
+}

@@ -1,0 +1,933 @@
+{
+  "id": "PrqaMainPipeline",
+  "name": "PRQA 00 · Main Pipeline",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 00 · Main Pipeline\nOne orchestration for every repository. Stages run as sub-workflows so each can be reviewed and tested alone:\n**Policy Gate → 02 Context → 03 LLM Prompt → 04 OpenCode Job → 05 Validate & Report → 06 Discord + 07 GitHub comment**.\n\nError outputs of every stage go to *Record Stage Error*; unhandled errors go to *PRQA 08 · Error Handler* (workflow setting).",
+        "height": 190,
+        "width": 900,
+        "color": 1
+      },
+      "id": "c88e5ac8-d293-54d3-939c-fa217d908bf6",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔒 Phase 1 — REVIEW ONLY\n`AUTOMATION_MODE=review_only` (compose/.env). The worker returns **mock** endpoints for GitHub, the prompt LLM and Discord, rejects every non-synthetic job with `REVIEW_ONLY_MODE`, and the registry has **0 enabled repositories**.\n\nNothing in this workflow can reach a real repository, API or channel until Phase 2 is explicitly approved.",
+        "height": 190,
+        "width": 620,
+        "color": 3
+      },
+      "id": "5b041453-2b52-54b5-9b91-72c119336847",
+      "name": "Note 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1008,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ▶ Manual synthetic test\nClick **Test workflow** with this trigger selected to run the whole pipeline against the synthetic fixture PR (#101 on `synthetic-org/sample-orders-api`). All external calls go to `prqa-mocks`.",
+        "height": 150,
+        "width": 560,
+        "color": 4
+      },
+      "id": "6a8b90e7-ce50-5929-9624-7a02414deae9",
+      "name": "Note 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "e6d209ad-9bc0-5deb-b325-5f561b4df267",
+      "name": "Pipeline Input (Execute Workflow Trigger)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "bd2c346a-0366-516d-b006-bb83f77e3ae4",
+      "name": "Manual Synthetic Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Manual test entry point: the SYNTHETIC fixture PR (synthetic-org/sample-orders-api #101).\n// This repository does not exist; the worker serves it from fixtures only.\nconst stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);\nreturn [{ json: {\n  job_seed: {\n    repository: 'synthetic-org/sample-orders-api',\n    synthetic: true,\n    test_level: 'standard',\n    pr: {\n      number: 101,\n      title: 'Add status filter and cancellation reason to orders API (SYNTHETIC)',\n      head_sha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',\n      base_sha: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432',\n      head_ref: 'feature/order-status-filter',\n      base_ref: 'main',\n      is_fork: false,\n      url: 'https://github.com/synthetic-org/sample-orders-api/pull/101',\n    },\n    trigger: { source: 'synthetic_test', label: 'qa-test:standard', delivery_id: `synthetic-manual-${stamp}` },\n  },\n  delivery_id: `synthetic-manual-${stamp}`,\n  received_at: new Date().toISOString(),\n  entry_point: 'manual_synthetic_test',\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "3665149a-e08b-5db0-9257-ef39ef76daa9",
+      "name": "Load Synthetic Fixture (job_seed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        500
+      ],
+      "notes": "synthetic-org/sample-orders-api #101",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// One input contract regardless of trigger (webhook receiver or manual synthetic test).\nconst inp = $input.first().json;\nconst seed = inp.job_seed;\nif (!seed || !seed.repository || !seed.pr) throw new Error('Pipeline input must contain job_seed {repository, pr, test_level, trigger}');\nreturn [{ json: {\n  job_seed: seed,\n  delivery_id: inp.delivery_id || (seed.trigger || {}).delivery_id || null,\n  received_at: inp.received_at || new Date().toISOString(),\n  entry_point: inp.entry_point || 'webhook',\n  pipeline_execution_id: $execution.id,\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "89c58ef3-ec9d-5cb4-8683-2fc38a815901",
+      "name": "Normalize Pipeline Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PRQA_WORKER_URL }}/config",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "d7115205-557e-5726-b9ae-6c94e8c73491",
+      "name": "Load Policy & Registry (worker /config)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        300
+      ],
+      "notes": "AUTOMATION_MODE, REAL_* flags, endpoints (mock vs real), registry",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Policy gate — mirrors worker/prqa_worker/policy.py. The worker re-checks everything on POST /jobs,\n// so this node is the visible, early decision, not the only one.\nconst input = $('Normalize Pipeline Input').first().json;\nconst cfg = $input.first().json;\nconst seed = input.job_seed;\nconst policy = cfg.policy || {};\nconst endpoints = cfg.endpoints || {};\nconst registry = (cfg.registry && cfg.registry.repositories) || [];\nconst entry = registry.find(r => r.full_name === seed.repository) || null;\n\nlet route = 'blocked', reason_code = 'UNKNOWN', reason = '', execution_mode = null;\nif (seed.synthetic) {\n  if (!seed.repository.startsWith('synthetic-org/')) { reason_code = 'SYNTHETIC_NAME_INVALID'; reason = 'synthetic jobs must target synthetic-org/*'; }\n  else if (!entry || entry.kind !== 'synthetic') { reason_code = 'SYNTHETIC_REPO_NOT_REGISTERED'; reason = 'synthetic repository is not registered'; }\n  else { route = 'synthetic'; execution_mode = 'mock'; reason_code = 'SYNTHETIC_MOCK_EXECUTION'; reason = 'fixture job → mock executor, no external calls'; }\n} else if (policy.review_only) {\n  reason_code = 'REVIEW_ONLY_MODE'; reason = 'AUTOMATION_MODE=review_only — real-project jobs are blocked until Phase 2 is explicitly approved';\n} else if (!policy.real_execution_possible) {\n  reason_code = 'REAL_PROJECT_TESTING_DISABLED'; reason = 'REAL_PROJECT_TESTING_ENABLED / AUTO_EXECUTION_ENABLED are false';\n} else if (!entry) {\n  reason_code = 'REPOSITORY_NOT_REGISTERED'; reason = 'repository is not in config/repositories.yaml';\n} else if (!entry.effective_enabled) {\n  reason_code = entry.approval_status === 'approved' ? 'REPOSITORY_DISABLED' : 'REPOSITORY_PENDING_APPROVAL';\n  reason = `registry: enabled=${entry.enabled}, approval_status=${entry.approval_status}`;\n} else if (seed.pr.is_fork && !entry.fork_prs_eligible) {\n  reason_code = 'FORK_PR_NOT_ELIGIBLE'; reason = 'fork PRs are not eligible for this repository';\n} else {\n  route = 'allowed'; execution_mode = 'live'; reason_code = 'LIVE_EXECUTION_ALLOWED'; reason = 'all policy gates passed';\n}\n\nreturn [{ json: {\n  ...input,\n  policy,\n  endpoints,\n  registry_entry: entry,\n  worker_version: cfg.worker_version,\n  decision: { route, allowed: route !== 'blocked', reason_code, reason, execution_mode, decided_at: new Date().toISOString() },\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "79b1fdf8-698b-5023-8f25-1483d2d1a25b",
+      "name": "Policy Gate: Review-Only & Repository",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "notes": "route = synthetic | allowed | blocked",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1ab3ed29-847c-5224-95e3-4e70d6e0e8df",
+                    "leftValue": "={{ $json.decision.route }}",
+                    "rightValue": "synthetic",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "synthetic (mock)"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "78b15a76-5bc5-5904-8134-57be3cd12802",
+                    "leftValue": "={{ $json.decision.route }}",
+                    "rightValue": "allowed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "allowed (live)"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "83af854d-c559-53f5-b012-95bd74dffaa3",
+                    "leftValue": "={{ $json.decision.route }}",
+                    "rightValue": "blocked",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "blocked"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "id": "dbbe6cb7-19d3-563b-81fe-2ab68a7b4059",
+      "name": "Execution Allowed?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/events",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ kind: \"blocked_by_policy\", detail: { decision: $json.decision, repository: $json.job_seed.repository, pr: $json.job_seed.pr.number, delivery_id: $json.delivery_id, execution_id: $execution.id } }) }}"
+      },
+      "id": "4a3dd118-c8a6-5101-bcc3-ee6ae9adca5d",
+      "name": "Record Blocked Decision (worker /events)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        620
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/notifications/discord",
+        "authentication": "none",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ kind: 'blocked', job_seed: $('Policy Gate: Review-Only & Repository').first().json.job_seed, decision: $('Policy Gate: Review-Only & Repository').first().json.decision, delivery_id: $('Policy Gate: Review-Only & Repository').first().json.delivery_id, pipeline: { execution_id: $execution.id, entry_point: $('Policy Gate: Review-Only & Repository').first().json.entry_point } }) }}"
+      },
+      "id": "f0f31c35-a8e9-5db9-a46e-55feea1de385",
+      "name": "Notify Blocked Decision (worker → Discord)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        620
+      ],
+      "notes": "BLOCKED notice: mock sink in review-only; real only when the worker policy allows",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "7645675c-d963-5797-9a0b-c51ad9114139",
+      "name": "Blocked: Review-Only / Repository Disabled (end)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        620
+      ],
+      "notes": "No test was executed for this PR",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PrqaPrContextCol",
+          "mode": "id",
+          "cachedResultName": "PRQA 02 · PR Context Collector"
+        },
+        "mode": "once",
+        "options": {}
+      },
+      "id": "b4e4b377-5613-558b-86ef-fa0b5e5b6fad",
+      "name": "Stage 02 · Collect PR Context",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1764,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PrqaLlmPromptBld",
+          "mode": "id",
+          "cachedResultName": "PRQA 03 · Prompt Builder (LLM)"
+        },
+        "mode": "once",
+        "options": {}
+      },
+      "id": "c0cf4259-e14e-5320-93d3-cd64b224a1d9",
+      "name": "Stage 03 · Build QA Prompt (LLM)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2044,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PrqaOpencodeDisp",
+          "mode": "id",
+          "cachedResultName": "PRQA 04 · OpenCode Job Dispatcher"
+        },
+        "mode": "once",
+        "options": {}
+      },
+      "id": "e7b04f1d-876e-582c-b4e0-ad290561b1ee",
+      "name": "Stage 04 · Dispatch OpenCode Job",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2324,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PrqaResultValidn",
+          "mode": "id",
+          "cachedResultName": "PRQA 05 · Result Validation & Report"
+        },
+        "mode": "once",
+        "options": {}
+      },
+      "id": "f13ebac7-ba10-53be-a826-eedd77ce5c8a",
+      "name": "Stage 05 · Validate Result & Render Report",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2604,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PrqaDiscordRepor",
+          "mode": "id",
+          "cachedResultName": "PRQA 06 · Discord Reporter"
+        },
+        "mode": "once",
+        "options": {}
+      },
+      "id": "a15da333-3e5d-50de-94c4-b8aaf9ccc8da",
+      "name": "Stage 06 · Discord Report",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2884,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PrqaGithubCommen",
+          "mode": "id",
+          "cachedResultName": "PRQA 07 · GitHub PR Commenter"
+        },
+        "mode": "once",
+        "options": {}
+      },
+      "id": "0b6e40aa-9cac-5ae7-824a-6f1e25d76e13",
+      "name": "Stage 07 · GitHub PR Comment",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2884,
+        320
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "94d66e7c-0acc-5681-9a08-e36b067d6b4c",
+      "name": "Merge Reporting Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        3164,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6b3cef96-456e-5a33-903b-07098103f359",
+              "name": "pipeline_status",
+              "value": "completed",
+              "type": "string"
+            },
+            {
+              "id": "e4b14016-853d-592e-a429-072a4d210e44",
+              "name": "repository",
+              "value": "={{ $json.job_seed.repository }}",
+              "type": "string"
+            },
+            {
+              "id": "3aa695c9-e4fb-5a53-ae96-f84e35990105",
+              "name": "pr_number",
+              "value": "={{ $json.job_seed.pr.number }}",
+              "type": "number"
+            },
+            {
+              "id": "0bf812a0-97aa-546f-ad11-434b466b1410",
+              "name": "synthetic",
+              "value": "={{ $json.job_seed.synthetic }}",
+              "type": "boolean"
+            },
+            {
+              "id": "70430005-3b18-5125-a6dd-a52e15cf1a1a",
+              "name": "decision",
+              "value": "={{ $json.decision }}",
+              "type": "object"
+            },
+            {
+              "id": "31b36673-ffff-5543-89df-84ce5e0a6228",
+              "name": "job_id",
+              "value": "={{ $json.job ? $json.job.id : null }}",
+              "type": "string"
+            },
+            {
+              "id": "66d49fda-e446-5227-9751-b2c69d0fbab6",
+              "name": "overall_status",
+              "value": "={{ $json.result ? $json.result.summary.overall_status : null }}",
+              "type": "string"
+            },
+            {
+              "id": "1365c0c3-77e3-5ae5-8cd7-badcf72ee172",
+              "name": "summary_line",
+              "value": "={{ $json.report ? $json.report.summary_line : null }}",
+              "type": "string"
+            },
+            {
+              "id": "9be3e6c2-6823-5981-93bb-f091b033c999",
+              "name": "discord",
+              "value": "={{ $json.discord || null }}",
+              "type": "object"
+            },
+            {
+              "id": "7c1dd52f-9b8d-5da9-be65-a6d05785285c",
+              "name": "github_comment",
+              "value": "={{ $json.github_comment || null }}",
+              "type": "object"
+            },
+            {
+              "id": "ce79ac0b-3788-543f-8ad0-67af16742b99",
+              "name": "prompt_source",
+              "value": "={{ $json.prompt ? $json.prompt.source : null }}",
+              "type": "string"
+            },
+            {
+              "id": "e0c96a29-a2ae-5c1e-988f-7e3eb1332079",
+              "name": "entry_point",
+              "value": "={{ $json.entry_point || null }}",
+              "type": "string"
+            },
+            {
+              "id": "244b05fe-5441-5ddf-8368-3e610ad8febe",
+              "name": "trigger_source",
+              "value": "={{ $json.job_seed.trigger ? ($json.job_seed.trigger.source || null) : null }}",
+              "type": "string"
+            },
+            {
+              "id": "8e2c0a10-049b-58ca-ba16-24503f5e8c7f",
+              "name": "actions_run_url",
+              "value": "={{ $json.job_seed.trigger ? ($json.job_seed.trigger.run_url || null) : null }}",
+              "type": "string"
+            },
+            {
+              "id": "3768fe12-586f-5b43-ada7-9a7c538a080a",
+              "name": "result_validation",
+              "value": "={{ $json.result_validation || null }}",
+              "type": "object"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "c8cdfd11-3d2c-51fa-ab0a-f430dcc3b533",
+      "name": "Final Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3444,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect a sanitized description of the failed stage (no raw URLs/tokens leave this node).\nconst item = $input.first();\nconst err = item.json.error || item.json;\nconst message = String((err && (err.message || err.description)) || JSON.stringify(err)).slice(0, 500)\n  .replace(/https?:\\/\\/\\S+/g, '[url]').replace(/gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\\w+|xai-[A-Za-z0-9]{20,}/g, '[token]');\nlet stage = 'unknown';\ntry { stage = $prevNode.name; } catch (e) {}\nreturn [{ json: {\n  kind: 'stage_error',\n  detail: { stage, message, execution_id: $execution.id, workflow: $workflow.name, decision: (item.json.decision || null) },\n  job_id: (item.json.job && item.json.job.id) || null,\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "4ce713de-a7b2-5413-b94f-48a124b94c2d",
+      "name": "Stage Failed → Sanitize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2604,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/events",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "0991437f-c18a-506b-a8d2-267ceccf80a1",
+      "name": "Record Stage Error (worker /events)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2884,
+        560
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {},
+      "id": "61512b2b-94c4-5e9e-807f-66d58f1345c6",
+      "name": "Pipeline Failed (end)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3164,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Pipeline Input (Execute Workflow Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Pipeline Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Synthetic Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Synthetic Fixture (job_seed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Synthetic Fixture (job_seed)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Pipeline Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Pipeline Input": {
+      "main": [
+        [
+          {
+            "node": "Load Policy & Registry (worker /config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Policy & Registry (worker /config)": {
+      "main": [
+        [
+          {
+            "node": "Policy Gate: Review-Only & Repository",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy Gate: Review-Only & Repository": {
+      "main": [
+        [
+          {
+            "node": "Execution Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execution Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Stage 02 · Collect PR Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage 02 · Collect PR Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Blocked Decision (worker /events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Blocked Decision (worker /events)": {
+      "main": [
+        [
+          {
+            "node": "Notify Blocked Decision (worker → Discord)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Blocked Decision (worker → Discord)": {
+      "main": [
+        [
+          {
+            "node": "Blocked: Review-Only / Repository Disabled (end)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 02 · Collect PR Context": {
+      "main": [
+        [
+          {
+            "node": "Stage 03 · Build QA Prompt (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage Failed → Sanitize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 03 · Build QA Prompt (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Stage 04 · Dispatch OpenCode Job",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage Failed → Sanitize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 04 · Dispatch OpenCode Job": {
+      "main": [
+        [
+          {
+            "node": "Stage 05 · Validate Result & Render Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage Failed → Sanitize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 05 · Validate Result & Render Report": {
+      "main": [
+        [
+          {
+            "node": "Stage 06 · Discord Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stage 07 · GitHub PR Comment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage Failed → Sanitize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 06 · Discord Report": {
+      "main": [
+        [
+          {
+            "node": "Merge Reporting Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage Failed → Sanitize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 07 · GitHub PR Comment": {
+      "main": [
+        [
+          {
+            "node": "Merge Reporting Results",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Stage Failed → Sanitize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Reporting Results": {
+      "main": [
+        [
+          {
+            "node": "Final Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage Failed → Sanitize": {
+      "main": [
+        [
+          {
+            "node": "Record Stage Error (worker /events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Stage Error (worker /events)": {
+      "main": [
+        [
+          {
+            "node": "Pipeline Failed (end)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "51a22f25-835b-5b5d-8fb9-515cfa5a45d9"
+}

@@ -1,0 +1,31 @@
+{
+  "cid": "C01-clear-behaviour",
+  "http_status": 200,
+  "seconds": 165.3,
+  "model_returned": "dots-studio/dots-3-note-preview:free",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 10263,
+    "completion_tokens": 16000,
+    "total_tokens": 26263
+  },
+  "diagnostics": {
+    "http_status": 200,
+    "model_returned": "dots-studio/dots-3-note-preview:free",
+    "provider": "AtlasCloud",
+    "request_id": "gen-1792933911-Sd3dzJSlGRIzB2zu0vCX",
+    "usage": {
+      "prompt_tokens": 10263,
+      "completion_tokens": 16000,
+      "total_tokens": 26263,
+      "reasoning_tokens": 15162
+    },
+    "finish_reason": "length",
+    "native_finish_reason": "length"
+  },
+  "redaction": {
+    "applied": false,
+    "rules": []
+  },
+  "content": "\n\n# Senior QA Engineer Prompt — Standard API Testing for PR: Add status filter and cancellation reason to orders API\n\n## 1. Role and Objective\n\nAct as a Senior QA Engineer testing the changes in PR #100 of `synthetic-org/bench-repo`. The PR adds a `status` query filter to `GET /v1/orders` and a cancellation endpoint `POST /v1/orders/{orderId}/cancel` with a `reason` field. The test level is **standard**: verify all stated requirements plus high-value negative/boundary cases. Use `curl` exclusively for HTTP requests. The objective is to confirm the implementation matches the PR description and to identify any regressions or defects.\n\n## 2. Verified PR Summary and Scope\n\n- Repository: `synthetic-org/bench-repo`, PR #100.\n- Changed files: `src/orders/routes.py`, `src/orders/schemas.py`, `openapi/openapi.yaml`.\n- Changed API operations: `GET /v1/orders`, `POST /v1/orders/{orderId}/cancel`.\n- Summary of changes:\n  - Added `status` query parameter to `GET /v1/orders` [FACT: diff]\n  - Added `POST /v1/orders/{orderId}/cancel` endpoint accepting a `CancelOrderRequest` payload [FACT: diff]\n  - Cancel endpoint raises `409` with detail `'ORDER_ALREADY_CANCELLED'` when the order is already cancelled [FACT: diff]\n  - Cancel endpoint stores the `reason` field from the payload via `repo.cancel(order, reason=payload.reason)` [FACT: diff]\n  - OpenAPI document updated to include the two operations [FACT: openapi]\n  - `GET /v1/orders` returns 200, 400, or 401 [FACT: openapi]\n  - `POST /v1/orders/{orderId}/cancel` returns 200, 404, 409, or 422 [FACT: openapi]\n\n## 3. Requirements and Evidence\n\n**R1 — Status filter on `GET /v1/orders`**\n- The endpoint must accept an optional `status` query parameter [FACT: diff]\n- Allowed values are `pending`, `paid`, `shipped`, `cancelled` [STATED: PR description]\n- Invalid status values must return HTTP 400 [FACT: openapi]\n- Omitting the parameter must return all orders (regression)\n\n**R2 — Cancellation endpoint `POST /v1/orders/{orderId}/cancel`**\n- The endpoint must accept a JSON body with a `reason` field [FACT: diff]\n- The `reason` must be a string of at most 500 characters [STATED: PR description]\n- Cancelling an already cancelled order must return HTTP 409 with detail `ORDER_ALREADY_CANCELLED` [FACT: diff]\n- Validation errors (missing reason, too long) must return HTTP 422 [FACT: openapi]\n- Cancelling a non-existent order must return HTTP 404 [FACT: openapi]\n\n**R3 — Cancellation reason exposure**\n- Cancelled orders must include a `cancellation_reason` field in responses [STATED: PR description]\n- Non‑cancelled orders must have `cancellation_reason` set to `null` [STATED: PR description]\n\n**Unverified / to confirm during discovery**\n- Exact"
+}

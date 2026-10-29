@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prqa.example.test/schemas/github-webhook-pr/1.0/github-webhook-pr.schema.json",
+  "title": "PR QA Pilot — accepted subset of a GitHub pull_request webhook payload",
+  "description": "Only the fields the receiver reads. Everything else in the payload is ignored and treated as untrusted data.",
+  "type": "object",
+  "required": ["action", "number", "pull_request", "repository"],
+  "properties": {
+    "action": { "enum": ["labeled", "opened", "synchronize", "reopened", "unlabeled", "closed", "edited"] },
+    "number": { "type": "integer", "minimum": 1 },
+    "label": {
+      "type": "object",
+      "required": ["name"],
+      "properties": { "name": { "type": "string", "maxLength": 100 } }
+    },
+    "pull_request": {
+      "type": "object",
+      "required": ["number", "title", "state", "head", "base"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string", "maxLength": 1000 },
+        "state": { "enum": ["open", "closed"] },
+        "draft": { "type": "boolean" },
+        "html_url": { "type": "string" },
+        "labels": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } },
+        "head": {
+          "type": "object",
+          "required": ["ref", "sha"],
+          "properties": {
+            "ref": { "type": "string" },
+            "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "repo": { "type": ["object", "null"], "properties": { "full_name": { "type": "string" }, "fork": { "type": "boolean" } } }
+          }
+        },
+        "base": {
+          "type": "object",
+          "required": ["ref", "sha"],
+          "properties": { "ref": { "type": "string" }, "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" } }
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "required": ["full_name"],
+      "properties": { "full_name": { "type": "string", "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$" } }
+    },
+    "sender": {
+      "type": "object",
+      "description": "GitHub-authenticated actor of the event (the user who added the label); used by the optional PRQA_TRIGGER_ALLOWED_ACTORS allowlist",
+      "properties": { "login": { "type": "string", "maxLength": 100 }, "type": { "type": "string", "maxLength": 40 } }
+    }
+  }
+}

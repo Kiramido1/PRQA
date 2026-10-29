@@ -1,0 +1,21 @@
+# PRQA automatic label-triggered runner for zedny-labs/Fluxera (user service; NOT installed automatically).
+# Installed with the current project path by `make install-services` (template: @PRQA_ROOT@ is replaced).
+# Alternative to n8n workflow 09 — install only after `python3 scripts/pipeline/prqa_auto_runner.py activate --apply`.
+#   systemctl --user daemon-reload && systemctl --user enable --now prqa-auto-runner.service
+#   journalctl --user -u prqa-auto-runner -f          # logs; notifications: runs/prqa-auto/notifications.jsonl
+# Stop: systemctl --user disable --now prqa-auto-runner.service
+[Unit]
+Description=PRQA automatic runner (poll `to be test` on zedny-labs/Fluxera; gate → grant → OpenCode → report)
+After=docker.service network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PRQA_ROOT@
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 "@PRQA_ROOT@/scripts/pipeline/prqa_auto_runner.py" serve --interval 60
+Restart=on-failure
+RestartSec=60
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

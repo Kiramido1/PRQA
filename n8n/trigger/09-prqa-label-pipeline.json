@@ -1,0 +1,1250 @@
+{
+  "id": "PrqaLabelTrigger",
+  "name": "PRQA 09 · Label-Triggered Pipeline",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n09-00",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -380
+      ],
+      "parameters": {
+        "width": 1300,
+        "height": 240,
+        "content": "## PRQA 09 · Label-Triggered Pipeline (Kiramido1/Amenly-Product)\nEvery minute: **Discover** open PRs labelled `to be test` that were not tested at their head SHA → **Claim** (once per SHA, concurrency 1) → **Env + Context** (disposable API at the SHA) → **Groq Prompt in 3 stages** (scope → coverage → sections, each ≤ 5.5k tokens, released when the shared ledger has TPM capacity; validated between stages, assembled locally) → **Quality Gate** on the complete prompt (≥ 85, hard fails; a failed or rejected generation falls back to the reference prompt) → **Start OpenCode Run** (executor `local`: the OpenCode CLI on this machine, free GLM, bubblewrap-isolated, live terminal window; `sandbox`: grant → worker → launcher → container) → **Wait / Poll** → **Report + Cleanup + Discord**.\nA blocked stage cleans up and reports to Discord by itself. n8n holds only the bridge token and the inference-only prompt credential: no GitHub, provider, grant or Discord secret."
+      }
+    },
+    {
+      "id": "n09-01",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n09-02",
+      "name": "Run Now (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        180
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-03",
+      "name": "1 · Discover PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/discover",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 330000
+        }
+      }
+    },
+    {
+      "id": "n09-04",
+      "name": "Next Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        80
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "run",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c01",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "run",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "recover",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c02",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "recover",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "in progress",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c03",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "wait",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "idle",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c04",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "idle",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "prerequisites missing / busy"
+        }
+      }
+    },
+    {
+      "id": "n09-05",
+      "name": "2 · Claim PR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        -120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/claim",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({pr: $json.next.pr}) }}",
+        "options": {
+          "timeout": 330000
+        }
+      }
+    },
+    {
+      "id": "n09-06",
+      "name": "Recover Stale Run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        60
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/recover",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 330000
+        }
+      }
+    },
+    {
+      "id": "n09-07",
+      "name": "Another PR is being tested",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-08",
+      "name": "No labelled PR to test",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-09",
+      "name": "Prerequisites missing / busy (see output)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        440
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-10",
+      "name": "Claimed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        -120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c05",
+              "leftValue": "={{ $json.claimed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n09-11",
+      "name": "3 · Env + Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1240,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/prepare",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({key: $json.key}) }}",
+        "options": {
+          "timeout": 3600000
+        }
+      }
+    },
+    {
+      "id": "n09-12",
+      "name": "Not claimed (see reason)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        -20
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-13",
+      "name": "Env ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1480,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c06",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n09-14",
+      "name": "Env blocked: cleaned up + Discord sent",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        -40
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-15",
+      "name": "Groq request ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1720,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c07",
+              "leftValue": "={{ !!$json.llm_request }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n09-16",
+      "name": "Wait for TPM capacity",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1840,
+        -420
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": "={{ Math.max(1, $json.wait_s || 1) }}",
+        "unit": "seconds"
+      },
+      "webhookId": "0b6f7a2e-3c41-4f0e-9a51-7d2c8e4b6a10",
+      "notes": "wait_s comes from the shared budget ledger (rolling 60 s window, provider-reported remaining tokens/reset); the proxy re-checks and reserves when the request is sent",
+      "notesInFlow": true
+    },
+    {
+      "id": "n09-17",
+      "name": "3b · Groq Prompt (model proxy)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        -420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://prqa-model-proxy:8089/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_MODEL_PROXY_PROMPT_TOKEN }}"
+            },
+            {
+              "name": "X-PRQA-Job-Id",
+              "value": "={{ $json.prompt_job_id }}"
+            },
+            {
+              "name": "X-Title",
+              "value": "PR QA Pilot"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 360000
+        }
+      },
+      "retryOnFail": false,
+      "onError": "continueErrorOutput",
+      "notes": "one stage of the staged generator per call; inference-only prompt credential; the proxy pins the model, holds the Groq key and enforces the shared budget. No n8n retry: the stage runner decides (at most one per stage).",
+      "notesInFlow": true
+    },
+    {
+      "id": "n09-18",
+      "name": "Extract Groq Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        -420
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nif (r && r.error && !r.choices) {\n  const code = r.error.httpCode || r.error.status || null;\n  return [{ json: { generation: { generated_text: null, finish_reason: null, llm_error: 'prompt LLM call failed',\n                                  http_status: code ? String(code) : null, response_shape: null, usage: null } } }];\n}\nconst content = r && r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : null;\nconst providerError = r && (r.error || (r.choices && r.choices[0] && r.choices[0].error));\nconst hasChoices = Boolean(r && Array.isArray(r.choices) && r.choices.length);\nconst shape = (hasChoices || providerError) ? null : ((r && typeof r.data === 'string') ? 'non_json_body' : 'no_choices');\nreturn [{ json: { generation: {\n  generated_text: typeof content === 'string' ? content : null,\n  finish_reason: (r.choices && r.choices[0] && r.choices[0].finish_reason) || null,\n  llm_error: (providerError && typeof content !== 'string') ? 'provider error in HTTP 200 body' : null,\n  http_status: null,\n  response_shape: shape,\n  usage: (r && r.usage) ? { prompt_tokens: r.usage.prompt_tokens, completion_tokens: r.usage.completion_tokens,\n                            total_tokens: r.usage.total_tokens } : null,\n}, groq_model: r.model || null } }];"
+      }
+    },
+    {
+      "id": "n09-19",
+      "name": "3a · Prompt Stage (validate → next)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        -420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/promptstep",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({key: $('2 · Claim PR').first().json.key, generation: $json.generation}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "n09-20",
+      "name": "Next Prompt Step",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2800,
+        -420
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "next stage / retry",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c08",
+                    "leftValue": "={{ $json.next }}",
+                    "rightValue": "call",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "assembled or stopped → gate"
+        }
+      }
+    },
+    {
+      "id": "n09-21",
+      "name": "3c · Quality Gate (85 + hard fails)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3040,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/gate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({key: $('2 · Claim PR').first().json.key, generation: $json.generation === undefined ? null : $json.generation}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      }
+    },
+    {
+      "id": "n09-22",
+      "name": "Gate accepted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3280,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c09",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n09-23",
+      "name": "4 · Start OpenCode Run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        -280
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/submit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({key: $('2 · Claim PR').first().json.key}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      }
+    },
+    {
+      "id": "n09-24",
+      "name": "Gate rejected: cleaned up + Discord sent",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        -100
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-25",
+      "name": "Job created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3760,
+        -280
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c10",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n09-26",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4000,
+        -360
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "webhookId": "5f0d0c55-6a8e-4d1a-9c55-0e7a09a1b2c3"
+    },
+    {
+      "id": "n09-27",
+      "name": "Submit blocked: cleaned up + Discord sent",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4000,
+        -180
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n09-28",
+      "name": "5 · Poll Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4240,
+        -360
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/poll",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({key: $('2 · Claim PR').first().json.key}) }}",
+        "options": {
+          "timeout": 330000
+        }
+      }
+    },
+    {
+      "id": "n09-29",
+      "name": "Job State",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        4480,
+        -360
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "finished",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c11",
+                    "leftValue": "={{ $json.terminal }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "timed out",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c12",
+                    "leftValue": "={{ $json.timed_out }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "still running"
+        }
+      }
+    },
+    {
+      "id": "n09-30",
+      "name": "6 · Report + Cleanup + Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4720,
+        -460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/finalize",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({key: $('2 · Claim PR').first().json.key}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      }
+    },
+    {
+      "id": "n09-31",
+      "name": "Fail: Timed Out (cancel + Discord)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4720,
+        -280
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_BRIDGE_URL }}/stage/fail",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PRQA_N8N_BRIDGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({key: $('2 · Claim PR').first().json.key, reason: 'n8n: OpenCode job exceeded the wait limit'}) }}",
+        "options": {
+          "timeout": 330000
+        }
+      }
+    },
+    {
+      "id": "n09-32",
+      "name": "Done (verdict in output)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4960,
+        -460
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "1 · Discover PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Now (manual)": {
+      "main": [
+        [
+          {
+            "node": "1 · Discover PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1 · Discover PRs": {
+      "main": [
+        [
+          {
+            "node": "Next Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next Action": {
+      "main": [
+        [
+          {
+            "node": "2 · Claim PR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recover Stale Run",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Another PR is being tested",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No labelled PR to test",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prerequisites missing / busy (see output)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2 · Claim PR": {
+      "main": [
+        [
+          {
+            "node": "Claimed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claimed?": {
+      "main": [
+        [
+          {
+            "node": "3 · Env + Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not claimed (see reason)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3 · Env + Context": {
+      "main": [
+        [
+          {
+            "node": "Env ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Env ready?": {
+      "main": [
+        [
+          {
+            "node": "Groq request ready?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Env blocked: cleaned up + Discord sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq request ready?": {
+      "main": [
+        [
+          {
+            "node": "Wait for TPM capacity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "3c · Quality Gate (85 + hard fails)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for TPM capacity": {
+      "main": [
+        [
+          {
+            "node": "3b · Groq Prompt (model proxy)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3b · Groq Prompt (model proxy)": {
+      "main": [
+        [
+          {
+            "node": "Extract Groq Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Groq Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Groq Result": {
+      "main": [
+        [
+          {
+            "node": "3a · Prompt Stage (validate → next)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3a · Prompt Stage (validate → next)": {
+      "main": [
+        [
+          {
+            "node": "Next Prompt Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next Prompt Step": {
+      "main": [
+        [
+          {
+            "node": "Wait for TPM capacity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "3c · Quality Gate (85 + hard fails)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3c · Quality Gate (85 + hard fails)": {
+      "main": [
+        [
+          {
+            "node": "Gate accepted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate accepted?": {
+      "main": [
+        [
+          {
+            "node": "4 · Start OpenCode Run",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gate rejected: cleaned up + Discord sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4 · Start OpenCode Run": {
+      "main": [
+        [
+          {
+            "node": "Job created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job created?": {
+      "main": [
+        [
+          {
+            "node": "Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Submit blocked: cleaned up + Discord sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 30s": {
+      "main": [
+        [
+          {
+            "node": "5 · Poll Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5 · Poll Job": {
+      "main": [
+        [
+          {
+            "node": "Job State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job State": {
+      "main": [
+        [
+          {
+            "node": "6 · Report + Cleanup + Discord",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail: Timed Out (cancel + Discord)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6 · Report + Cleanup + Discord": {
+      "main": [
+        [
+          {
+            "node": "Done (verdict in output)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveExecutionProgress": true
+  }
+}

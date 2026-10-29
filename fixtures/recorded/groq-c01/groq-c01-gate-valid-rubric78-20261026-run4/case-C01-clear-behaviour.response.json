@@ -1,0 +1,69 @@
+{
+  "cid": "C01-clear-behaviour",
+  "provider": "groq",
+  "http_status": 200,
+  "seconds": 4.7,
+  "model_returned": "openai/gpt-oss-120b",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 4210,
+    "completion_tokens": 1790,
+    "total_tokens": 6000
+  },
+  "diagnostics": {
+    "http_status": 200,
+    "model_returned": "openai/gpt-oss-120b",
+    "request_id": "chatcmpl-13d82bc4-a735-4606-a7ab-01fdedc3846d",
+    "usage": {
+      "prompt_tokens": 4210,
+      "completion_tokens": 1790,
+      "total_tokens": 6000,
+      "reasoning_tokens": 191
+    },
+    "finish_reason": "stop"
+  },
+  "redaction": {
+    "applied": false,
+    "rules": []
+  },
+  "source_sha256": {
+    "prompts/llm/system.v2.md": "5d2fd90c1e1bf7d51c5f91924bbd81ef2c409b5e821314a0fcb37f9203d2d0c3",
+    "prompts/llm/user.v2.md": "54e3ae5cbaf03b9f925b939617138a532026af48bf1741bb80718b0e1a9ce77d",
+    "prompts/reference/Senior_QA_Reference_Prompt.md": "8cead9f4af95f19d61b6efc56e507492d77ceb667036a335a27fe63bf999f3ed",
+    "worker/prqa_worker/prompt_builder.py": "5533b715ed613431a50c0ad52d5f9c2dee3ee5d7945e5f83c5764f2a0b110ca8",
+    "worker/prqa_worker/validation.py": "d865030d0e8bf5d68fffd431088e4756c78b93616d69a700f08c4b690253a69c",
+    "tests/qa_rubric.py": "d3839fb26b6b03e8a565aa76fd22ce6fdc744671db376bede42e998dedf282ed",
+    "tests/qa_benchmark.py": "a508d2f4d434321b42414771ab337c51506ee10ca50c88b9985d7b23ade6415a",
+    "scripts/evaluate_openrouter_live.py": "64ff79a9f0fe36a75377056f93a7ba9febc3ad288932a2962e91a74f8e8dd9b8",
+    "scripts/evaluate_groq_live.py": "e1862db3ac7e1c56146dba149634e9eff61967ae8f26c913e99ea8835211b118"
+  },
+  "outcome": "usable",
+  "generation": {
+    "model_slug": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "endpoint_host": "api.groq.com",
+    "template_version": "v2",
+    "reference_sha256": "8cead9f4af95f19d61b6efc56e507492d77ceb667036a335a27fe63bf999f3ed",
+    "source_sha256": {
+      "prompts/llm/system.v2.md": "5d2fd90c1e1bf7d51c5f91924bbd81ef2c409b5e821314a0fcb37f9203d2d0c3",
+      "prompts/llm/user.v2.md": "54e3ae5cbaf03b9f925b939617138a532026af48bf1741bb80718b0e1a9ce77d",
+      "prompts/reference/Senior_QA_Reference_Prompt.md": "8cead9f4af95f19d61b6efc56e507492d77ceb667036a335a27fe63bf999f3ed",
+      "worker/prqa_worker/prompt_builder.py": "5533b715ed613431a50c0ad52d5f9c2dee3ee5d7945e5f83c5764f2a0b110ca8",
+      "worker/prqa_worker/validation.py": "d865030d0e8bf5d68fffd431088e4756c78b93616d69a700f08c4b690253a69c",
+      "tests/qa_rubric.py": "d3839fb26b6b03e8a565aa76fd22ce6fdc744671db376bede42e998dedf282ed",
+      "tests/qa_benchmark.py": "a508d2f4d434321b42414771ab337c51506ee10ca50c88b9985d7b23ade6415a",
+      "scripts/evaluate_openrouter_live.py": "64ff79a9f0fe36a75377056f93a7ba9febc3ad288932a2962e91a74f8e8dd9b8",
+      "scripts/evaluate_groq_live.py": "e1862db3ac7e1c56146dba149634e9eff61967ae8f26c913e99ea8835211b118"
+    },
+    "requested_max_tokens": 3000,
+    "reasoning": {
+      "effort": "low",
+      "include_reasoning": false
+    },
+    "generated_at": "2026-10-26T18:12:04Z",
+    "request_count": 1,
+    "retries": 0,
+    "outcome": "usable"
+  },
+  "content": "# Senior QA Engineer Prompt — standard API Testing for PR: Add status filter and cancellation reason to orders API\n## 1. Role and Objective\nValidate that the changes introduced in PR #100 meet the stated functional requirements and do not introduce regressions, using only `curl` against the non‑production API.\n\n## 2. Verified PR Summary and Scope\n- Repository: `git@synthetic-org/bench-repo`  \n- PR #100, title **Add status filter and cancellation reason to orders API**  \n- Changed files: `src/orders/routes.py` (modified) [FACT: diff]; `src/orders/schemas.py` (modified) [FACT: diff]; `openapi/openapi.yaml` (modified) [FACT: diff]  \n- Affected operations (per gate): `GET /v1/orders` [FACT: openapi]; `POST /v1/orders/{orderId}/cancel` [FACT: openapi]  \n\n## 3. Requirements and Evidence\n**R1: Status filter on `GET /v1/orders`**  \n- The endpoint now accepts an optional `status` query parameter [FACT: diff]  \n- Allowed values are `pending`, `paid`, `shipped`, `cancelled` [STATED: PR description]  \n\n**R2: Cancellation requires a reason**  \n- `POST /v1/orders/{orderId}/cancel` payload must include a `reason` string [STATED: PR description]  \n- The string length must be ≤ 500 characters [STATED: PR description]  \n\n**R3: Cancellation reason exposure**  \n- Cancelled orders return a `cancellation_reason` field; non‑cancelled orders return it as `null` [STATED: PR description]  \n\n*Unverified / to confirm during discovery*  \n- Exact validation error responses for missing/oversized `reason` (e.g., 422) (per contract (verify))  \n- Behaviour of `status` filter when an unsupported value is supplied (per contract (verify))\n\n## 4. Environment and API Discovery\n- Base URL placeholder: `$BASE_URL`  \n- Auth token placeholder: `$TOKEN`  \n- Retrieve OpenAPI spec: `curl -sS -H \"Authorization: Bearer $TOKEN\" \"$BASE_URL/openapi.yaml\" -o openapi.yaml`  \n\n## 5. Prioritized Test Scenarios\nLabels: **Required**, **Regression**, **Conditional**, **Blocked**; priority order.\n\n**ORD-001 (Required) — Verify each allowed status filter value (verify)**  \n- Requirement/Risk: R1 — each listed status value filters the order list  \n- Request: `for s in pending paid shipped cancelled; do curl -sS -H \"Authorization: Bearer $TOKEN\" \"$BASE_URL/v1/orders?status=$s\" -o \"out_$s.json\"; done`  \n- Expected: per contract (verify); each output file contains only orders with the requested status  \n\n**ORD-002 (Required) — Cancel an order with a valid reason (verify)**  \n- Requirement/Risk: R2 — `reason` is required and must be ≤ 500 chars  \n- Request: `ORDER_ID=$(curl -sS -H \"Authorization: Bearer $TOKEN\" \"$BASE_URL/v1/orders\" | jq -r 'first(.[]?.id // empty)')`  \n  `curl -sS -X POST -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"reason\":\"Customer request\"}' \"$BASE_URL/v1/orders/$ORDER_ID/cancel\" -o cancel_ok.json`  \n- Expected: HTTP 200 with cancellation details per contract (verify)  \n\n**ORD-003 (Required) — Cancel an already‑cancelled order (verify)**  \n- Requirement/Risk: R2 — cancelling an already cancelled order returns 409  \n- Request: `curl -sS -X POST -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"reason\":\"Duplicate\"}' \"$BASE_URL/v1/orders/$ORDER_ID/cancel\" -o cancel_dup.json`  \n- Expected: HTTP 409 (documented)  \n\n**ORD-004 (Blocked) — Verify `cancellation_reason` field visibility**  \n- Requirement/Risk: R3 — cancelled orders expose `cancellation_reason`, others return null  \n- Request: *BLOCKED* – No fixture exists that guarantees an order is in cancelled state without prior mutation; creating such a state would require destructive setup not permitted in this test level.  \n\n## 6. Authorization and Security Checks\n- All `GET` and `POST` requests include `Authorization: Bearer $TOKEN` as the API documents 401 responses.  \n- Unauthenticated check is omitted (no scenario) because the PR does not modify auth behaviour; marked **Not applicable for this PR — auth unchanged**.\n\n## 7. Regression Coverage\nOnly the two modified endpoints are exercised; no other routes are touched.  \n**Not applicable for this PR — other endpoints unchanged**.\n\n## 8. Execution and Evidence Rules\n- Use `curl` exclusively; responses saved to files referenced in scenarios.  \n- Parse IDs with `jq` as shown; no hard‑coded IDs.  \n- No external libraries or installers.  \n- Each scenario runs in isolation; state‑changing calls are limited to the order being cancelled in ORD‑002/003.  \n- Record for each request: HTTP status, response body, output file, Pass/Fail/Blocked, and the request command.\n\n## 9. Defect Reporting\n- Classify failures as **Regression** (introduced by this PR), **Pre‑existing**, **Environment**, **Test Data**, **Ambiguous Contract**, or **Inconclusive**.  \n- Severity P0–P3 based on impact (e.g., missing 409 is P1).  \n- Defect record fields: ID, Title, Severity, Endpoint & Method, Sanitized Preconditions, Reproducible `curl` command, Expected vs. Actual, Status, Evidence file, Steps, Impact, Origin (this PR or unknown).\n\n## 10. Final QA Report\nA–H structure:  \nA. Summary of coverage (all three requirements exercised).  \nB. Coverage matrix (R1–R3 → scenarios).  \nC. Results table (status per scenario).  \nD. Defects list (if any).  \nE. Regression outcome (pass/fail).  \nF. Blockers (ORD‑004).  \nG. Recommendation: **PASS WITH KNOWN ISSUES** if ORD‑004 remains blocked; otherwise **PASS**.  \nH. Artifacts (curl logs, JSON outputs, OpenAPI dump).\n\n## 11. Blockers, Assumptions and Ambiguities\n- `pending`, `paid`, `shipped`, `cancelled` status values are description‑only; their enforcement is a hypothesis → `(verify)`.  \n- `reason` length limit ≤ 500 and mandatory presence are description‑only → `(verify)`.  \n- Presence and nullability of `cancellation_reason` are description‑only → `(verify)`.  \n- No fixture to guarantee a pre‑cancelled order without mutating data; scenario ORD‑004 is **BLOCKED**.  \n- Triggers for 400, 401, 404, 422 responses are not established in the evidence; any expectations around them are marked `(verify)`.\n\n**Final requirement:** Behave as a skeptical Senior QA Engineer. Verify the behavior, collect evidence, challenge assumptions, prioritize reproducibility, and report only what the available evidence supports."
+}

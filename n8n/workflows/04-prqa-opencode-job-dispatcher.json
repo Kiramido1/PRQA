@@ -1,0 +1,794 @@
+{
+  "id": "PrqaOpencodeDisp",
+  "name": "PRQA 04 · OpenCode Job Dispatcher",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 04 · OpenCode Job Dispatcher\n`POST /jobs` on the worker: schema validation → **policy gate** (review-only, registry, approval, fork, label) → **dedupe** (delivery id + `repo#pr@sha:level`) → queued. The worker executes: synthetic → mock executor (fixture result); real → isolated OpenCode sandbox (live mode only; `opencode_runner.py`). n8n polls every 10 s, retries a failed job once, and stops with a visible error when the worker rejects the job.",
+        "height": 200,
+        "width": 940,
+        "color": 1
+      },
+      "id": "7067e897-80b3-5490-b034-08ca2d9289a5",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "d56dfe34-e95f-5365-bfd6-b3df3c5d53b9",
+      "name": "Dispatcher Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shape the request for POST /jobs (schemas/job-request.schema.json). The prompt text travels here only.\nconst inp = $input.first().json;\nconst seed = inp.job_seed;\nconst trig = seed.trigger || {};\nreturn [{ json: {\n  synthetic: Boolean(seed.synthetic),\n  repository: seed.repository,\n  pr: {\n    number: Number(seed.pr.number), head_sha: seed.pr.head_sha, base_sha: seed.pr.base_sha, title: String(seed.pr.title || '').slice(0, 300),\n    base_ref: seed.pr.base_ref, head_ref: seed.pr.head_ref, is_fork: Boolean(seed.pr.is_fork), url: seed.pr.url,\n  },\n  test_level: seed.test_level,\n  trigger: { source: trig.source || 'manual', delivery_id: inp.delivery_id || trig.delivery_id || undefined, label: trig.label || undefined,\n    requested_label: trig.requested_label || undefined, requested_by: trig.requested_by || undefined, run_url: trig.run_url || undefined },\n  prompt: { text: inp.prompt.text, source: inp.prompt.source, sha256: inp.prompt.sha256, template_version: inp.prompt.template_version },\n  context_sha256: inp.context && inp.context.context_sha256 ? inp.context.context_sha256 : undefined,\n  n8n_execution_id: String($execution.id),\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "c2367ca4-e41b-5d88-84b9-c936e9da3a79",
+      "name": "Build Job Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        300
+      ],
+      "notes": "schemas/job-request.schema.json",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/jobs",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "387a06ca-13ca-5c81-b06e-321e755a4147",
+      "name": "Submit Job to Worker (policy gate + dedupe)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        300
+      ],
+      "notes": "201 accepted · 403 policy rejected · 409 duplicate · 422 invalid",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "6fe85c60-6130-59d9-9028-5ee2c93f709a",
+                    "leftValue": "={{ String($json.statusCode) }}",
+                    "rightValue": "201",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "accepted"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c2d9a302-556f-5b15-8913-678ff5c26b04",
+                    "leftValue": "={{ String($json.statusCode) }}",
+                    "rightValue": "409",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "duplicate"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5f7fabaa-0367-5bcd-b063-7c3c4a66d7d6",
+                    "leftValue": "={{ String($json.statusCode) }}",
+                    "rightValue": "403",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "rejected by policy"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "dfee430e-1aba-5164-9037-6fa1be8a7c31",
+      "name": "Job Accepted?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'Duplicate job: ' + JSON.stringify($json.body) }}"
+      },
+      "id": "16ea3356-1b76-5b59-b38c-a30ea95ac4b6",
+      "name": "Stop: Duplicate Job (already active)",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'Worker policy rejected the job: ' + (($json.body.decision || {}).reason_code || 'UNKNOWN') + ' — ' + (($json.body.decision || {}).reason || '') }}"
+      },
+      "id": "575d368a-bb54-5557-a7f0-63f7957facb2",
+      "name": "Stop: Rejected by Worker Policy",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        700
+      ],
+      "notes": "REVIEW_ONLY_MODE lands here for any real repository",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'Worker returned HTTP ' + $json.statusCode + ': ' + JSON.stringify($json.body).slice(0, 500) }}"
+      },
+      "id": "728854a0-724d-5b9d-bfe5-bd16e85dddf0",
+      "name": "Stop: Worker Error / Invalid Request",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        860
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "865a9c79-80e4-5a1d-b49d-46f668be244f",
+              "name": "job_id",
+              "value": "={{ $json.body.job.id }}",
+              "type": "string"
+            },
+            {
+              "id": "13ef38dd-3e69-545c-b801-12bae2581094",
+              "name": "execution_mode",
+              "value": "={{ $json.body.job.execution_mode }}",
+              "type": "string"
+            },
+            {
+              "id": "72ecbe2e-2c13-5ae0-9db8-3e4621afd921",
+              "name": "decision",
+              "value": "={{ $json.body.decision }}",
+              "type": "object"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "f8d9e959-0f8b-54c7-9344-3f642e24d9fb",
+      "name": "Extract Job ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "5a680901-87e6-51f4-940f-25f0a893ab9e",
+      "name": "Wait 10 s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        180
+      ],
+      "webhookId": "prqa-dispatch-wait"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PRQA_WORKER_URL }}/jobs/{{ $('Extract Job ID').first().json.job_id }}",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "ef3395a4-9d34-539a-839e-446605ac26a1",
+      "name": "Poll Job Status (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        180
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "787b0f74-c073-5a9c-bacf-706f5d95419b",
+                    "leftValue": "={{ $json.job.status }}",
+                    "rightValue": "succeeded",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "succeeded"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c7122283-418c-55a8-b979-7348147b610b",
+                    "leftValue": "={{ $json.job.status }}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "60d28850-235b-5245-9449-536e3fb7d773",
+                    "leftValue": "={{ $json.job.status }}",
+                    "rightValue": "cancelled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cancelled"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "3202c3f3-2bff-583b-bf23-b24bd73b37c5",
+      "name": "Job Finished?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1960,
+        180
+      ],
+      "notes": "fallback output = queued/running → keep polling · cancelled = label removed / PR closed / superseded",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'Job ' + $json.job.id + ' was cancelled: ' + (($json.job.cancel || {}).reason || 'unknown reason') }}"
+      },
+      "id": "44a46172-98ca-5ceb-b966-17f2437b4801",
+      "name": "Stop: Job Cancelled (label removed / PR closed / superseded)",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        620
+      ],
+      "notes": "no result is reported for a cancelled job",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "53cfddfe-fa64-58b8-a033-f57bfa66e296",
+              "leftValue": "={{ $runIndex }}",
+              "rightValue": 360,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f8a80c45-4964-5b90-9df2-69f41ae7d672",
+      "name": "Poll Limit Reached? (> 360 polls ≈ 60 min)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'Job ' + $('Extract Job ID').first().json.job_id + ' did not finish within the polling window' }}"
+      },
+      "id": "0b8f3bde-d7b8-5a93-a7f8-0a99540f43ed",
+      "name": "Stop: Poll Timeout",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2520,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a76fe9a4-25a3-55ea-a51f-dcd41c03d85e",
+              "leftValue": "={{ $json.job.notifications && $json.job.notifications.n8n_retry ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4eeb4ada-ea42-57cc-8c88-77c8059c4439",
+      "name": "Already Retried by n8n?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'Job ' + $json.job.id + ' failed: ' + JSON.stringify($json.job.error).slice(0, 400) }}"
+      },
+      "id": "fe4b94c2-90c1-5b5b-8ad5-817587e04918",
+      "name": "Stop: Job Failed After Retries",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2520,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/jobs/{{ $json.job.id }}/retry",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}"
+      },
+      "id": "f96e5af1-da9a-55a8-af95-84e8bcde6b5f",
+      "name": "Request Manual Retry (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2520,
+        420
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/jobs/{{ $json.job.id }}/notification",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: \"n8n_retry\", status: \"requested\", detail: { execution_id: $execution.id } }) }}"
+      },
+      "id": "2c2a0e56-79f4-5e69-9a2e-6ff850811491",
+      "name": "Mark n8n Retry (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2800,
+        420
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Dispatcher Input').first().json;\nconst polled = $input.first().json;\nreturn [{ json: { ...input, job: polled.job, result: polled.job.result } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "0b87df7b-f6b9-54cf-bed0-3c10de6fc472",
+      "name": "Attach Job Result to Pipeline Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "Dispatcher Input": {
+      "main": [
+        [
+          {
+            "node": "Build Job Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Job Request": {
+      "main": [
+        [
+          {
+            "node": "Submit Job to Worker (policy gate + dedupe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Job to Worker (policy gate + dedupe)": {
+      "main": [
+        [
+          {
+            "node": "Job Accepted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Accepted?": {
+      "main": [
+        [
+          {
+            "node": "Extract Job ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop: Duplicate Job (already active)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop: Rejected by Worker Policy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop: Worker Error / Invalid Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Job ID": {
+      "main": [
+        [
+          {
+            "node": "Wait 10 s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10 s": {
+      "main": [
+        [
+          {
+            "node": "Poll Job Status (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Job Status (worker)": {
+      "main": [
+        [
+          {
+            "node": "Job Finished?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Finished?": {
+      "main": [
+        [
+          {
+            "node": "Attach Job Result to Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Already Retried by n8n?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop: Job Cancelled (label removed / PR closed / superseded)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Poll Limit Reached? (> 360 polls ≈ 60 min)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Limit Reached? (> 360 polls ≈ 60 min)": {
+      "main": [
+        [
+          {
+            "node": "Stop: Poll Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 10 s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Retried by n8n?": {
+      "main": [
+        [
+          {
+            "node": "Stop: Job Failed After Retries",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Request Manual Retry (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Manual Retry (worker)": {
+      "main": [
+        [
+          {
+            "node": "Mark n8n Retry (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark n8n Retry (worker)": {
+      "main": [
+        [
+          {
+            "node": "Wait 10 s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "69d6758f-f829-5577-9047-dd135ea9b69a"
+}

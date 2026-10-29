@@ -1,0 +1,513 @@
+{
+  "id": "PrqaLlmPromptBld",
+  "name": "PRQA 03 · Prompt Builder (LLM)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 03 · Prompt Builder (LLM)\nThe worker renders the chat-completion request from `prompts/llm/*.v2.md` + the canonical reference prompt (`prompts/reference/Senior_QA_Reference_Prompt.md`) + the sanitized context. The prompt LLM (active provider: direct Groq `openai/gpt-oss-120b`, no OpenRouter fallback) rewrites the reference for this PR. n8n holds no provider key: a real request goes to the **model proxy** (`prqa-model-proxy:8089`, prompt credential PRQA_MODEL_PROXY_PROMPT_TOKEN, shared provider budget, no tools); without the credential no request is sent. The output is validated (structure, required sections, no secrets, no injected phrases); on any failure or rejection the **deterministic reference-derived fallback** is used. The OpenCode result contract (section 15) is always appended by the worker.",
+        "height": 200,
+        "width": 900,
+        "color": 1
+      },
+      "id": "26a32016-6c9e-52a4-bfea-c911d51fbfd9",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "1e44e0ea-b3e7-596f-b654-3029160d344b",
+      "name": "Prompt Builder Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/prompts/build",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ repository: $json.job_seed.repository, pr_number: $json.job_seed.pr.number, test_level: $json.job_seed.test_level, synthetic: $json.job_seed.synthetic, context: $json.context }) }}"
+      },
+      "id": "21afea74-6d05-5c42-8b98-98c39b2952da",
+      "name": "Build LLM Request from Reference Template (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "76d5c20c-6f88-52cb-9a32-f65c87602ca9",
+              "leftValue": "={{ $json.prompt_llm_api_mode !== 'real' || (String($json.prompt_llm_api_base || '').indexOf('http://') === 0 && Boolean($env.PRQA_MODEL_PROXY_PROMPT_TOKEN)) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4352ea6a-ec01-5379-b68a-7f8b69c29644",
+      "name": "Provider Key Present? (or mock)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        420,
+        300
+      ],
+      "notes": "real mode without the proxy prompt credential, or with a non-proxy base: no request is sent; the reference fallback is used (missing_credential)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4801f009-04f2-587a-bbe6-8097be09905d",
+              "name": "generated_text",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c2747fd7-0c10-54b6-a1b8-c225c003de85",
+              "name": "llm_error",
+              "value": "missing_credential",
+              "type": "string"
+            },
+            {
+              "id": "ce5fdd75-4fc1-5df6-9308-78d29d337643",
+              "name": "llm_model",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "82c3cbf5-ea05-5329-9508-ea7a295b88d0",
+      "name": "Provider Key Missing → Reference Fallback",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        560,
+        580
+      ],
+      "notes": "never reaches the provider; worker records generation.failure=missing_credential",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.prompt_llm_api_base }}/chat/completions",
+        "authentication": "none",
+        "options": {
+          "timeout": 360000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($json.prompt_llm_api_mode === 'real' ? ($env.PRQA_MODEL_PROXY_PROMPT_TOKEN || '') : 'mock-key-review-only') }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-PRQA-Job-Id",
+              "value": "={{ (String($('Prompt Builder Input').first().json.job_seed.repository || 'pr').replace(/[^A-Za-z0-9_.-]/g, '-') + '-' + String($('Prompt Builder Input').first().json.job_seed.pr.number)).slice(0, 100) }}"
+            },
+            {
+              "name": "X-Title",
+              "value": "PR QA Pilot"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}"
+      },
+      "id": "74003a46-be1e-5b1a-96fb-556d3a77d16d",
+      "name": "Call Prompt LLM via Model Proxy (budgeted chat/completions)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        300
+      ],
+      "notes": "mock endpoint in review-only; in live mode the model proxy (never the provider): prompt credential, shared provider budget (a 429 = budget refusal), locked contract, no tools. Single attempt (no retry): a timeout or error uses the reference fallback.",
+      "notesInFlow": true,
+      "retryOnFail": false,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pull the assistant text out of the OpenAI-compatible chat-completion response. Treated as UNTRUSTED until validated.\nconst r = $input.first().json;\nconst content = r && r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : null;\n// An HTTP 200 body can carry a provider `error` object instead of content: record that it happened, never its text.\nconst providerError = r && (r.error || (r.choices && r.choices[0] && r.choices[0].error));\n// Without choices and without an error object nothing is invented: only the body's shape is reported\n// (non-JSON text arrives as `data` because the node auto-detects the response format).\nconst hasChoices = Boolean(r && Array.isArray(r.choices) && r.choices.length);\nconst shape = (hasChoices || providerError) ? null : ((r && typeof r.data === 'string') ? 'non_json_body' : 'no_choices');\nreturn [{ json: {\n  generated_text: typeof content === 'string' ? content : null,\n  llm_model: r.model || null,\n  llm_finish_reason: (r.choices && r.choices[0] && r.choices[0].finish_reason) || null,\n  llm_usage: r.usage || null,\n  llm_error: (providerError && typeof content !== 'string') ? 'provider error in HTTP 200 body' : null,\n  llm_response_shape: shape,\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "be728eac-a903-5be4-b10e-866d7ea0c8ab",
+      "name": "Extract Generated Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4801f009-04f2-587a-bbe6-8097be09905d",
+              "name": "generated_text",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "718c2942-a908-59a0-a6ad-e715d34e4544",
+              "name": "llm_error",
+              "value": "={{ ($json.error && $json.error.message) || 'prompt LLM call failed' }}",
+              "type": "string"
+            },
+            {
+              "id": "1a846a07-7b54-5127-84ff-a61179f7a194",
+              "name": "llm_http_status",
+              "value": "={{ ($json.error && ($json.error.httpCode || $json.error.status)) || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ce5fdd75-4fc1-5df6-9308-78d29d337643",
+              "name": "llm_model",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "0badbe25-a5a1-5aff-badf-901c68a1979d",
+      "name": "LLM Unavailable → Reference Fallback",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        440
+      ],
+      "notes": "generated_text = null → worker uses the reference-derived prompt; the error text is only classified by the worker (generation.failure), never stored",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/prompts/finalize",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ generated_text: $json.generated_text || null, finish_reason: $json.llm_finish_reason || null, llm_error: $json.llm_error || null, http_status: $json.llm_http_status || null, response_shape: $json.llm_response_shape || null, repository: $('Prompt Builder Input').first().json.job_seed.repository, pr_number: $('Prompt Builder Input').first().json.job_seed.pr.number, test_level: $('Prompt Builder Input').first().json.job_seed.test_level, synthetic: $('Prompt Builder Input').first().json.job_seed.synthetic, context: $('Prompt Builder Input').first().json.context }) }}"
+      },
+      "id": "05854949-88da-55b0-81ac-1b2768c263e4",
+      "name": "Validate Prompt / Fallback to Reference (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ],
+      "notes": "appends section 15 (qa-result.json contract)",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4251ac13-100a-5c36-9549-1d26062feff2",
+              "leftValue": "={{ $json.prompt.source }}",
+              "rightValue": "llm",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6deb535d-85e3-57ac-a599-3947620d0eb8",
+      "name": "Prompt Source?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a543aa41-cfd0-54ac-a928-17a2b183ed63",
+      "name": "Prompt: LLM-generated ✓",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d53931a8-3ae0-5a9d-9d2f-cb1dd344def1",
+      "name": "Prompt: Reference fallback",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Prompt Builder Input').first().json;\nconst fin = $input.first().json;\nlet llm = {};\ntry { llm = $('Extract Generated Prompt').first().json; } catch (e) { try { llm = $('LLM Unavailable → Reference Fallback').first().json; } catch (e2) {} }\n// error: the worker's sanitized failure category only, never n8n's or the provider's error text\nreturn [{ json: { ...input, prompt: fin.prompt, prompt_validation: fin.validation, prompt_generation: fin.generation || null,\n  llm: { model: llm.llm_model || null, finish_reason: llm.llm_finish_reason || null, usage: llm.llm_usage || null,\n         error: (fin.generation && fin.generation.failure) || null } } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "27e6929a-5335-5710-9ced-918d6afe71a1",
+      "name": "Attach Prompt to Pipeline Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Prompt Builder Input": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Request from Reference Template (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Request from Reference Template (worker)": {
+      "main": [
+        [
+          {
+            "node": "Provider Key Present? (or mock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider Key Present? (or mock)": {
+      "main": [
+        [
+          {
+            "node": "Call Prompt LLM via Model Proxy (budgeted chat/completions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Provider Key Missing → Reference Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider Key Missing → Reference Fallback": {
+      "main": [
+        [
+          {
+            "node": "Validate Prompt / Fallback to Reference (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Prompt LLM via Model Proxy (budgeted chat/completions)": {
+      "main": [
+        [
+          {
+            "node": "Extract Generated Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM Unavailable → Reference Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Generated Prompt": {
+      "main": [
+        [
+          {
+            "node": "Validate Prompt / Fallback to Reference (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Unavailable → Reference Fallback": {
+      "main": [
+        [
+          {
+            "node": "Validate Prompt / Fallback to Reference (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Prompt / Fallback to Reference (worker)": {
+      "main": [
+        [
+          {
+            "node": "Prompt Source?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt Source?": {
+      "main": [
+        [
+          {
+            "node": "Prompt: LLM-generated ✓",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prompt: Reference fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt: LLM-generated ✓": {
+      "main": [
+        [
+          {
+            "node": "Attach Prompt to Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt: Reference fallback": {
+      "main": [
+        [
+          {
+            "node": "Attach Prompt to Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "9cb9eeca-51bc-53d6-bd48-8e6877bcb659"
+}

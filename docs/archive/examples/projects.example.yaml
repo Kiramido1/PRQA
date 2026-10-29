@@ -1,0 +1,165 @@
+# PR QA Pilot — multi-repository configuration (EXAMPLE)
+#
+# Status: Planned — documentation only (v0.1, 2026-10-18)
+#
+# Copy to config/projects.yaml (gitignored) and replace placeholders.
+# This file contains NO real credentials. Secrets are referenced by
+# environment-variable NAME only; the runner resolves them at execution time.
+# All hostnames use reserved names (RFC 2606 / RFC 6761): *.example.test, *.internal.
+
+config_version: "1.0"
+
+defaults:
+  request_timeout_seconds: 10        # per request (curl --max-time)
+  connect_timeout_seconds: 3         # curl --connect-timeout
+  max_response_body_kib: 512         # larger bodies are truncated in evidence
+  max_request_body_kib: 64           # plans with larger bodies are rejected
+  transport_retries: 1               # retries only for TRANSPORT_ERROR / TIMEOUT, never for FAIL
+  retry_backoff_seconds: 2
+  follow_redirects: false            # curl --max-redirs 0
+  allowed_methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+  redaction:
+    header_names: [authorization, cookie, set-cookie, x-api-key, x-runner-token]
+    body_keys: [password, token, access_token, refresh_token, secret, api_key, ssn, card_number]
+    patterns:
+      - "(?i)bearer\\s+[a-z0-9._~+/-]+=*"
+      - "ghp_[A-Za-z0-9]{36}"
+      - "github_pat_[A-Za-z0-9_]{20,}"
+  test_levels:
+    smoke:         { max_requests: 15,  max_runtime_minutes: 2,  approval: auto_if_valid }
+    standard:      { max_requests: 60,  max_runtime_minutes: 10, approval: human }
+    comprehensive: { max_requests: 200, max_runtime_minutes: 30, approval: human }
+    security:      { max_requests: 100, max_runtime_minutes: 20, approval: human_mandatory }
+
+projects:
+  - project_id: acme-orders
+    enabled: true
+    display_name: "ACME Orders API (fictional)"
+
+    repository:
+      owner: example-org
+      name: orders-service
+      default_base_branch: main
+      allowed_base_branches: [main, release/*]
+
+    api:
+      # Exactly one environment is selected per run; production is never listed.
+      environments:
+        local:
+          base_url: "http://orders-api.qa.internal:8080"
+          allowed_hosts: ["orders-api.qa.internal"]
+          allow_private_network: true      # explicit opt-in for the local docker target only
+        staging:
+          base_url: "https://orders.staging.example.test"
+          allowed_hosts: ["orders.staging.example.test"]
+          allow_private_network: false
+      default_environment: local
+      forbidden_hosts_patterns: ["*prod*", "*.production.*"]
+
+    openapi:
+      source: repository                   # repository | url | none
+      path: "openapi/openapi.yaml"         # read at the PR head SHA via GitHub API
+      url: null
+
+    scope:
+      allowed_path_prefixes: ["/v1/orders"]
+      denied_path_prefixes: ["/v1/admin", "/internal", "/actuator"]
+      allowed_methods: [GET, POST, PATCH, DELETE]   # subset of defaults
+
+    auth:
+      strategy: bearer_token               # bearer_token | api_key_header | none
+      profiles:
+        anonymous:
+          type: none
+        tenant_a_user:
+          type: bearer_token
+          token_env: QA_ACME_ORDERS_TENANT_A_TOKEN
+        tenant_b_user:
+          type: bearer_token
+          token_env: QA_ACME_ORDERS_TENANT_B_TOKEN
+
+    test_levels_supported: [smoke, standard, comprehensive, security]
+
+    limits:
+      request_timeout_seconds: 10
+      max_requests_per_run: 200            # hard ceiling regardless of level
+      max_concurrent_requests: 1           # sequential execution in v1
+      min_delay_between_requests_ms: 100
+
+    data_policy:
+      destructive_tests_allowed: false     # can only be enabled per run via approval.json
+      test_data_prefix: "qa-prqa-"         # every created entity uses this prefix
+      cleanup:
+        required: true
+        strategy: delete_created_entities  # delete_created_entities | environment_reset | none
+        cleanup_endpoint_template: "/v1/orders/{orderId}"
+        on_failure: report_and_keep        # keep evidence of leftovers in the report
+
+    notifications:
+      discord:
+        enabled: true
+        webhook_env: DISCORD_WEBHOOK_URL   # resolved by n8n / runner, never logged
+        notify_on: [FAIL, ERROR, BLOCKED, PASS]
+        mention_role_on_confirmed_s1: false
+
+  - project_id: acme-inventory
+    enabled: false                         # onboarding not complete
+    display_name: "ACME Inventory API (fictional, disabled)"
+
+    repository:
+      owner: example-org
+      name: inventory-service
+      default_base_branch: main
+      allowed_base_branches: [main]
+
+    api:
+      environments:
+        staging:
+          base_url: "https://inventory.staging.example.test"
+          allowed_hosts: ["inventory.staging.example.test"]
+          allow_private_network: false
+      default_environment: staging
+      forbidden_hosts_patterns: ["*prod*"]
+
+    openapi:
+      source: url
+      path: null
+      url: "https://inventory.staging.example.test/openapi.json"
+
+    scope:
+      allowed_path_prefixes: ["/v2/items", "/v2/stock"]
+      denied_path_prefixes: ["/v2/admin"]
+      allowed_methods: [GET, POST, PUT]
+
+    auth:
+      strategy: api_key_header
+      profiles:
+        anonymous:
+          type: none
+        service_reader:
+          type: api_key_header
+          header_name: X-API-Key
+          token_env: QA_ACME_INVENTORY_SERVICE_READER_TOKEN
+
+    test_levels_supported: [smoke, standard]
+
+    limits:
+      request_timeout_seconds: 15
+      max_requests_per_run: 60
+      max_concurrent_requests: 1
+      min_delay_between_requests_ms: 250
+
+    data_policy:
+      destructive_tests_allowed: false
+      test_data_prefix: "qa-prqa-"
+      cleanup:
+        required: false
+        strategy: none
+        on_failure: report_and_keep
+
+    notifications:
+      discord:
+        enabled: false
+        webhook_env: DISCORD_WEBHOOK_URL
+        notify_on: [FAIL, ERROR]
+        mention_role_on_confirmed_s1: false

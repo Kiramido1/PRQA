@@ -1,0 +1,293 @@
+{
+  "id": "PrqaResultValidn",
+  "name": "PRQA 05 · Result Validation & Report",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 05 · Result Validation & Report\n`POST /results/validate` checks `qa-result.schema.json` **and** count reconciliation (summary vs test_cases vs coverage matrix, defect references, verdict consistency). Invalid results become an honest `INCONCLUSIVE` placeholder. `POST /reports/render` produces the Markdown report, the Discord embed and the GitHub comment — all redacted, all marked SYNTHETIC when applicable.",
+        "height": 180,
+        "width": 900,
+        "color": 1
+      },
+      "id": "4a28a5ca-85d6-55e4-8cb0-4cbb1ed2cd29",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "f7eca1f0-d0e0-518a-a3d7-070dc843acb3",
+      "name": "Result Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/results/validate",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ result: $json.result }) }}"
+      },
+      "id": "bfdde556-9ec9-54fc-9328-f0730602cbe7",
+      "name": "Validate Result Schema & Counts (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a328b90b-83f7-5757-85a7-bfa58dd95963",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "20cdd954-226d-5686-b8c6-be730b4fdcba",
+      "name": "Result Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "f1b05ae9-a0d9-5ec8-97e9-8d19f4a0166b",
+      "name": "Result Valid ✓",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        840,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// The worker/OpenCode returned something that fails the qa-result schema: report it honestly as INCONCLUSIVE.\nconst input = $('Result Input').first().json;\nconst check = $input.first().json;\nconst r = input.result || {};\nconst pr = input.job_seed.pr;\nreturn [{ json: { result: {\n  result_version: '1.0', synthetic: Boolean(input.job_seed.synthetic), job_id: (input.job && input.job.id) || 'unknown-job',\n  repository: input.job_seed.repository,\n  pr: { number: pr.number, title: pr.title, head_sha: pr.head_sha },\n  environment: { name: input.job_seed.synthetic ? 'mock' : 'staging', base_url_redacted: 'unknown' },\n  executed_by: { engine: input.job_seed.synthetic ? 'mock_executor' : 'opencode', mode: input.job_seed.synthetic ? 'mock' : 'live' },\n  summary: { overall_status: 'INCONCLUSIVE', total: 0, passed: 0, failed: 0, blocked: 0, not_applicable: 0,\n    executive_summary: 'Result rejected by schema/reconciliation validation (INVALID_RESULT).' },\n  coverage_matrix: [], test_cases: [], defects: [],\n  blockers: ['INVALID_RESULT: ' + (check.errors || []).slice(0, 10).join(' | ')].map(s => s.slice(0, 500)),\n  recommendation: { verdict: 'INCONCLUSIVE', rationale: 'The worker returned a result that does not satisfy qa-result.schema.json.' },\n}, result_validation: check } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "a78eb1f4-0c98-5c6d-82aa-63bb58bf419a",
+      "name": "Build INVALID_RESULT Placeholder (INCONCLUSIVE)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Result Input').first().json;\nconst cur = $input.first().json;\nconst result = cur.result || input.result;\nconst validation = cur.result_validation || cur;\nreturn [{ json: { result, result_validation: { valid: Boolean(validation.valid), errors: validation.errors || [] } } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "245a827c-572e-5a60-a50d-06814695041d",
+      "name": "Select Result for Rendering",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/reports/render",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ result: $json.result }) }}"
+      },
+      "id": "ab7c628c-c909-5460-a226-7524f4d5d1d2",
+      "name": "Render Report / Discord / GitHub Comment (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Result Input').first().json;\nconst rendered = $input.first().json;\nconst sel = $('Select Result for Rendering').first().json;\nreturn [{ json: { ...input, result: sel.result, result_validation: sel.result_validation, report: rendered } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "66eeb4a9-a836-58da-8ddc-e5bf3450b5e5",
+      "name": "Attach Report to Pipeline Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Result Input": {
+      "main": [
+        [
+          {
+            "node": "Validate Result Schema & Counts (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Result Schema & Counts (worker)": {
+      "main": [
+        [
+          {
+            "node": "Result Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Valid?": {
+      "main": [
+        [
+          {
+            "node": "Result Valid ✓",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build INVALID_RESULT Placeholder (INCONCLUSIVE)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Valid ✓": {
+      "main": [
+        [
+          {
+            "node": "Select Result for Rendering",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build INVALID_RESULT Placeholder (INCONCLUSIVE)": {
+      "main": [
+        [
+          {
+            "node": "Select Result for Rendering",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Result for Rendering": {
+      "main": [
+        [
+          {
+            "node": "Render Report / Discord / GitHub Comment (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Report / Discord / GitHub Comment (worker)": {
+      "main": [
+        [
+          {
+            "node": "Attach Report to Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "9f6be958-bac3-5685-9856-0a9613c8973a"
+}

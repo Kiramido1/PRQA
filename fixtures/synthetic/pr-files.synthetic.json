@@ -1,0 +1,7 @@
+[
+  { "filename": "src/orders/routes.py", "status": "modified", "additions": 38, "deletions": 6, "changes": 44 },
+  { "filename": "src/orders/schemas.py", "status": "modified", "additions": 21, "deletions": 2, "changes": 23 },
+  { "filename": "openapi/openapi.yaml", "status": "modified", "additions": 44, "deletions": 3, "changes": 47 },
+  { "filename": "tests/test_orders.py", "status": "modified", "additions": 57, "deletions": 0, "changes": 57 },
+  { "filename": "migrations/0007_cancel_reason.sql", "status": "added", "additions": 4, "deletions": 0, "changes": 4 }
+]

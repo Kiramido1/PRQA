@@ -1,0 +1,253 @@
+{
+  "id": "PrqaDiscordRepor",
+  "name": "PRQA 06 · Discord Reporter",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 06 · Discord Reporter\nHands the **validated** result to the worker (`POST /notifications/discord`), which: refuses jobs that have not `succeeded`, re-validates the result (invalid → honest INCONCLUSIVE, never PASS), claims the `discord` notification on the job (duplicate guard), sanitizes untrusted text (mentions, Markdown), splits long reports within Discord's limits, delivers with bounded retries (timeouts, 429 `Retry-After`, 5xx) and records the outcome on the job. **Real** webhook only when the worker policy reports `discord_mode == 'real'` (`AUTOMATION_MODE=live` + `REAL_DISCORD_REPORTING_ENABLED=true`) *and* `DISCORD_WEBHOOK_URL` is set in the worker environment; otherwise the mock sink (`prqa-mocks`, inspect at `/mock/received`). A delivery failure never changes the test result.",
+        "height": 210,
+        "width": 940,
+        "color": 1
+      },
+      "id": "282ad47a-0275-5279-842b-52ac7d91ae90",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "13dd5d76-dbe2-56b8-80cf-e6b727447168",
+      "name": "Discord Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/notifications/discord",
+        "authentication": "none",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ kind: 'result', job_id: $json.job.id, result: $json.result, result_validation: $json.result_validation, prompt: $json.prompt ? { source: $json.prompt.source, model: ($json.llm || {}).model || null, api_mode: ($json.endpoints || {}).prompt_llm_api_mode || null } : null, pipeline: { execution_id: $execution.id, entry_point: $json.entry_point || null, delivery_id: $json.delivery_id || null } }) }}"
+      },
+      "id": "36d87bde-f6e8-5c22-816e-6381a4ab2c2d",
+      "name": "Deliver Discord Report (worker /notifications/discord)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        300
+      ],
+      "notes": "worker decides mock vs real; 409 = job not completed (never reported)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// The worker (POST /notifications/discord) rendered, sanitized, split, delivered (with bounded retries / 429 handling)\n// and recorded the notification on the job. mock vs real was decided by the worker policy, never here.\nconst input = $('Discord Input').first().json;\nconst resp = $input.first().json;\nconst code = Number(resp.statusCode || 0);\nconst b = resp.body || {};\nconst delivered = code === 200 && Boolean(b.delivered);\nreturn [{ json: { ...input, discord: {\n  mode: b.mode || 'unknown',\n  status: b.status || (code === 200 ? 'unknown' : `worker_http_${code}`),\n  delivered,\n  skipped_duplicate: b.status === 'skipped_duplicate',\n  messages: b.messages || 0, sent: b.sent || 0,\n  results: b.results || [],\n  overall_status: b.overall_status || null,\n  validation_valid: typeof b.validation_valid === 'boolean' ? b.validation_valid : null,\n  worker_status_code: code,\n  error: code === 200 ? null : String(b.error || b.detail || 'worker error').slice(0, 300),\n} } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "d3f7611e-2332-5169-8066-c089400b8267",
+      "name": "Attach Discord Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bda603d1-33de-5b34-ab31-7dc13dfe56d6",
+              "leftValue": "={{ $json.discord.delivered }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8714a61b-f12e-5c9e-bd5e-fba304bd1fb3",
+      "name": "Delivered?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "6ae2fe35-bb24-5777-a139-a5c5a579ff24",
+      "name": "Discord: delivered ✓",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        180
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "adb6df2a-bd28-561e-bf22-d24f1728944c",
+      "name": "Discord: failed / skipped (result unchanged)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        420
+      ],
+      "notes": "status + per-message results recorded on the job (notifications.discord)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Attach Discord Status').first().json }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "1d9cd2d8-052d-5b8d-84a1-2be1c3c7a07b",
+      "name": "Return Pipeline Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Discord Input": {
+      "main": [
+        [
+          {
+            "node": "Deliver Discord Report (worker /notifications/discord)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deliver Discord Report (worker /notifications/discord)": {
+      "main": [
+        [
+          {
+            "node": "Attach Discord Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Discord Status": {
+      "main": [
+        [
+          {
+            "node": "Delivered?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivered?": {
+      "main": [
+        [
+          {
+            "node": "Discord: delivered ✓",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord: failed / skipped (result unchanged)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord: delivered ✓": {
+      "main": [
+        [
+          {
+            "node": "Return Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord: failed / skipped (result unchanged)": {
+      "main": [
+        [
+          {
+            "node": "Return Pipeline Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "PrqaErrorHandler"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "e9a78bb6-95c9-52e4-90b6-f7c503296bf8"
+}

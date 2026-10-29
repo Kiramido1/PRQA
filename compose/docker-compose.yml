@@ -1,0 +1,499 @@
+# PR QA Pilot — local review stack (Phase 1: BUILD AND REVIEW ONLY)
+#
+# Services:
+#   n8n          orchestration UI + workflows, bound to 127.0.0.1:5678
+#   prqa-worker  OpenCode worker API (policy gate, job store, result validation, report rendering)
+#   prqa-mocks   mock GitHub / prompt-LLM (OpenAI-compatible) / Discord / target-API endpoints used while AUTOMATION_MODE=review_only
+#
+# Nothing in this stack can reach a real repository, a real API, or a real
+# reporting destination while compose/.env keeps the review-only defaults:
+# the worker only hands n8n mock endpoint URLs, and rejects every non-synthetic job.
+name: prqa
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_IMAGE_TAG:?set in .env}
+    restart: on-failure  # not unless-stopped: see Makefile (drive mounts after dockerd at boot)
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      N8N_LISTEN_ADDRESS: 0.0.0.0
+      N8N_WEBHOOK_URL: http://localhost:5678/
+      N8N_EDITOR_BASE_URL: http://localhost:5678/
+      N8N_SECURE_COOKIE: "false"
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-UTC}
+      TZ: ${GENERIC_TIMEZONE:-UTC}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set in .env}
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      N8N_RUNNERS_TASK_TIMEOUT: "300"
+      # Shell / local-filesystem nodes stay blocked (SECURITY.md §11).
+      NODES_EXCLUDE: '["n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger","n8n-nodes-base.readWriteFile"]'
+      # The webhook signature check (Code node) needs the Node.js crypto builtin.
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      # --- values the workflows read through $env (see docs/N8N_REVIEW_GUIDE.md) ---
+      PRQA_WORKER_URL: http://prqa-worker:8080
+      PRQA_WORKER_TOKEN: ${PRQA_WORKER_TOKEN:?set in .env}
+      PRQA_AUTOMATION_MODE: ${AUTOMATION_MODE:-review_only}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      # least privilege: the dedicated read-only GITHUB_TOKEN in the secrets file is for prqa-worker only (pinned checkout);
+      # n8n gets a token only if one is provisioned separately as PRQA_N8N_GITHUB_TOKEN (empty by default).
+      GITHUB_TOKEN: ${PRQA_N8N_GITHUB_TOKEN:-}
+      # n8n holds NO provider key. Workflow 03 sends prompt generation to the model proxy (prqa_prompt network) with this
+      # inference-only credential (no tools, shared provider budget); only prqa-model-proxy holds the Groq key.
+      # Provisioned into ~/.config/prqa/secrets.env by scripts/setup/provision_model_proxy_secrets.py (loaded by scripts/start.sh).
+      PRQA_MODEL_PROXY_PROMPT_TOKEN: ${PRQA_MODEL_PROXY_PROMPT_TOKEN:-}
+      PROMPT_LLM_MODEL: ${PROMPT_LLM_MODEL:-openai/gpt-oss-120b}
+      # workflow 09 (n8n/trigger/) drives the host-side runner: n8n -> prqa-n8n-bridge-relay -> scripts/services/prqa_n8n_bridge.py (Unix socket).
+      PRQA_BRIDGE_URL: http://prqa-n8n-bridge-relay:8790
+      PRQA_N8N_BRIDGE_TOKEN: ${PRQA_N8N_BRIDGE_TOKEN:-}
+      # least privilege: the secrets-file DISCORD_WEBHOOK_URL is used only by the host-side trusted reporter
+      # (scripts/pipeline/prqa_auto_runner.py); n8n gets a webhook only if provisioned separately as PRQA_N8N_DISCORD_WEBHOOK_URL.
+      DISCORD_WEBHOOK_URL: ${PRQA_N8N_DISCORD_WEBHOOK_URL:-}
+      # Opt-in PR label that starts a run (receiver Code node mirrors the worker's rule)
+      PRQA_TRIGGER_LABEL: ${PRQA_TRIGGER_LABEL:-to be test}
+      PRQA_DEFAULT_TEST_LEVEL: ${PRQA_DEFAULT_TEST_LEVEL:-standard}
+      PRQA_TRIGGER_ALLOWED_ACTORS: ${PRQA_TRIGGER_ALLOWED_ACTORS:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ../n8n/workflows:/imports:ro
+    networks:
+      - prqa_internal
+      # prompt generation only: n8n -> prqa-model-proxy:8089 (internal, no default route; the proxy is phase2-only, so
+      # without it the request fails and the deterministic fallback is used)
+      - prqa_prompt
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - prqa-worker
+      - prqa-mocks
+
+
+  # Byte relay for workflow 09: TCP on prqa_internal -> the host bridge's Unix socket (the host firewall drops
+  # container -> host TCP). Holds no secret; n8n authenticates end to end to the bridge with PRQA_N8N_BRIDGE_TOKEN.
+  prqa-n8n-bridge-relay:
+    image: prqa/worker:${PRQA_VERSION:-0.1.0}
+    restart: on-failure  # not unless-stopped: see Makefile (drive mounts after dockerd at boot)
+    user: "1000:1000"
+    entrypoint: ["python3", "-u", "/relay/prqa_bridge_relay.py"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ../scripts/services/prqa_bridge_relay.py:/relay/prqa_bridge_relay.py:ro
+      - ${HOME}/.local/state/prqa/bridge-sock:/run/prqa-bridge
+    networks:
+      - prqa_internal
+  prqa-worker:
+    build:
+      context: ../worker
+    image: prqa/worker:0.1.0
+    restart: on-failure  # not unless-stopped: see Makefile (drive mounts after dockerd at boot)
+    ports:
+      - "127.0.0.1:8080:8080"     # loopback only: lets you inspect /config, /jobs, /events during review
+    environment:
+      # ---- review-only policy (fail-closed; see worker/prqa_worker/policy.py) ----
+      AUTOMATION_MODE: ${AUTOMATION_MODE:-review_only}
+      REAL_PROJECT_TESTING_ENABLED: ${REAL_PROJECT_TESTING_ENABLED:-false}
+      AUTO_EXECUTION_ENABLED: ${AUTO_EXECUTION_ENABLED:-false}
+      REAL_GITHUB_REPORTING_ENABLED: ${REAL_GITHUB_REPORTING_ENABLED:-false}
+      REAL_DISCORD_REPORTING_ENABLED: ${REAL_DISCORD_REPORTING_ENABLED:-false}
+      REPOSITORY_REGISTRY_DEFAULT_ENABLED: ${REPOSITORY_REGISTRY_DEFAULT_ENABLED:-false}
+      # Single explicit exception: route ONLY the prompt-builder LLM call to the real provider while review-only.
+      PROMPT_LLM_LIVE_IN_REVIEW_ONLY: ${PROMPT_LLM_LIVE_IN_REVIEW_ONLY:-false}
+      # ---- service wiring ----
+      PRQA_WORKER_TOKEN: ${PRQA_WORKER_TOKEN:?set in .env}
+      PRQA_REGISTRY_PATH: /config/repositories.yaml
+      PRQA_SCHEMA_DIR: /schemas
+      PRQA_PROMPTS_DIR: /prompts
+      PRQA_FIXTURES_DIR: /fixtures
+      PRQA_DATA_DIR: /data
+      MOCK_SERVICES_URL: http://prqa-mocks:8090
+      GITHUB_API_BASE: https://api.github.com
+      PROMPT_LLM_API_BASE: ${PROMPT_LLM_API_BASE:-https://api.groq.com/openai/v1}
+      PROMPT_LLM_MODEL: ${PROMPT_LLM_MODEL:-openai/gpt-oss-120b}
+      # Where n8n sends a REAL prompt-generation request: the model proxy (budget ledger, locked contract, key holder).
+      # The provider base above only selects the request adapter; no service other than the proxy contacts it.
+      PRQA_PROMPT_LLM_PROXY_URL: ${PRQA_PROMPT_LLM_PROXY_URL:-http://prqa-model-proxy:8089/v1}
+      # Generation settings (validated at worker start-up): reasoning auto = only where the provider adapter supports it
+      PROMPT_LLM_REASONING: ${PROMPT_LLM_REASONING:-auto}
+      PROMPT_LLM_MAX_TOKENS: ${PROMPT_LLM_MAX_TOKENS:-3000}
+      PROMPT_LLM_REASONING_EFFORT: ${PROMPT_LLM_REASONING_EFFORT:-low}
+      PROMPT_LLM_REASONING_MAX_TOKENS: ${PROMPT_LLM_REASONING_MAX_TOKENS:-}
+      # OpenCode model: GPT-OSS 120B on direct Groq through the PRQA model proxy (provider "prqa"), unless a registry entry
+      # overrides it. No provider key here: only prqa-model-proxy holds one (PRQA_MODEL_PROVIDER_KEY_FILE).
+      OPENCODE_MODEL: ${OPENCODE_MODEL:-prqa/openai/gpt-oss-120b}
+      OPENCODE_SANDBOX_IMAGE: prqa/opencode-sandbox:local
+      # ---- label trigger + lifecycle (unlabeled / closed / synchronize) ----
+      PRQA_TRIGGER_LABEL: ${PRQA_TRIGGER_LABEL:-to be test}
+      PRQA_DEFAULT_TEST_LEVEL: ${PRQA_DEFAULT_TEST_LEVEL:-standard}
+      # ---- isolated per-job workspaces (volume prqa_worker_data) ----
+      PRQA_WORKSPACE_ROOT: /data/workspaces
+      PRQA_WORKSPACE_RETENTION_HOURS: ${PRQA_WORKSPACE_RETENTION_HOURS:-24}
+      PRQA_CHECKOUT_TIMEOUT_S: ${PRQA_CHECKOUT_TIMEOUT_S:-300}
+      # Worker-side pinned checkout (hook-free, https only) packed into a per-job artifact for the sandbox. Phase 2 only
+      # (the sandbox never clones and never receives GITHUB_TOKEN). Never runs while review-only.
+      PRQA_WORKER_CHECKOUT_ENABLED: ${PRQA_WORKER_CHECKOUT_ENABLED:-false}
+      # Empty = GitHub over https (default). Simulation only: file:///data/mirrors = local bare mirror in this volume
+      # (file protocol only, no credential). Never set for real runs.
+      PRQA_CHECKOUT_REMOTE_BASE: ${PRQA_CHECKOUT_REMOTE_BASE:-}
+      PRQA_CHECKOUT_MAX_MB: ${PRQA_CHECKOUT_MAX_MB:-500}
+      PRQA_WORKSPACE_MIN_FREE_MB: ${PRQA_WORKSPACE_MIN_FREE_MB:-1024}
+      PRQA_WORKSPACE_MAX_COUNT: ${PRQA_WORKSPACE_MAX_COUNT:-50}
+      # ---- Sandbox launch (Phase 2): the worker NEVER launches containers. Live jobs are handed to prqa-launcher
+      # (compose profile phase2) through the launch_state lifecycle; the worker refuses to start with Docker access.
+      PRQA_ENFORCE_NO_DOCKER: "true"
+      PRQA_LAUNCHER_TOKEN: ${PRQA_LAUNCHER_TOKEN:-}
+      PRQA_SANDBOX_NETWORK: ${PRQA_SANDBOX_NETWORK:-none}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Single-run grants (worker/prqa_worker/run_grants.py): HMAC key minted by scripts/pipeline/prqa_authorize_run.py --init-key
+      # into the secrets file. Worker only; empty = grants disabled and the review-only hand-off stays fully inert.
+      PRQA_RUN_GRANT_KEY: ${PRQA_RUN_GRANT_KEY:-}
+      # Optional authorization: comma-separated GitHub logins allowed to trigger runs by labelling (webhook sender.login).
+      PRQA_TRIGGER_ALLOWED_ACTORS: ${PRQA_TRIGGER_ALLOWED_ACTORS:-}
+      # ---- GitHub Actions entry (POST /webhook/prqa/actions): the worker verifies the signature, n8n never sees the secret ----
+      PRQA_WEBHOOK_SECRET: ${PRQA_WEBHOOK_SECRET:-}
+      PRQA_WEBHOOK_TOLERANCE_S: ${PRQA_WEBHOOK_TOLERANCE_S:-300}
+      PRQA_ACTIONS_RATE_LIMIT_PER_REPO: ${PRQA_ACTIONS_RATE_LIMIT_PER_REPO:-20}
+      PRQA_ACTIONS_RATE_LIMIT_GLOBAL: ${PRQA_ACTIONS_RATE_LIMIT_GLOBAL:-60}
+      PRQA_ACTIONS_RATE_LIMIT_WINDOW_S: ${PRQA_ACTIONS_RATE_LIMIT_WINDOW_S:-600}
+      # Per-repository `to be test` connections (scripts/setup/prqa_connect_repository.py, docs/REPOSITORY_CONNECTION_SETUP.md):
+      # each connection binds ONE repository to its own signing secret; read-only, re-read on change, no restart needed.
+      PRQA_ACTIONS_CONNECTIONS_PATH: /run/prqa-connections
+      # ---- Discord report delivery (worker /notifications/discord). Real only with AUTOMATION_MODE=live + REAL_DISCORD_REPORTING_ENABLED=true ----
+      # The secrets-file DISCORD_WEBHOOK_URL is for the host-side reporter only; the worker gets one only if provisioned
+      # separately as PRQA_WORKER_DISCORD_WEBHOOK_URL (it stays in review-only mock delivery either way).
+      DISCORD_WEBHOOK_URL: ${PRQA_WORKER_DISCORD_WEBHOOK_URL:-}
+      DISCORD_HTTP_TIMEOUT_S: ${DISCORD_HTTP_TIMEOUT_S:-10}
+      DISCORD_MAX_ATTEMPTS: ${DISCORD_MAX_ATTEMPTS:-3}
+    volumes:
+      - ../config/repositories.yaml:/config/repositories.yaml:ro
+      - ../schemas:/schemas:ro
+      - ../prompts:/prompts:ro
+      - ../fixtures:/fixtures:ro
+      - prqa_worker_data:/data
+      # private (750/640) connection registry outside the project drive, provisioned by scripts/setup/prqa_connect_repository.py.
+      # Unprovisioned: an empty tracked placeholder, so every connection dispatch is rejected (CONNECTION_UNKNOWN).
+      - type: bind
+        source: ${PRQA_ACTIONS_CONNECTIONS_DIR:-./actions-connections.unprovisioned}
+        target: /run/prqa-connections
+        read_only: true
+        bind:
+          create_host_path: false
+      # NEVER mount /var/run/docker.sock here in Phase 1. Live-mode sandboxing
+      # (worker/prqa_worker/opencode_runner.py) is a Phase 2 decision.
+    networks:
+      - prqa_internal
+      # the launcher's only peer: it reaches the worker's launcher API (X-Launcher-Token) on this internal network
+      - prqa_launcher
+    user: "10001:10001"
+    group_add:
+      - "${PRQA_ACTIONS_CONNECTIONS_GID:-10001}"   # host group of the 640 connections file (recorded by the setup CLI)
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "python3", "-I", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  prqa-mocks:
+    build:
+      context: ../mocks
+    image: prqa/mocks:0.1.0
+    restart: on-failure  # not unless-stopped: see Makefile (drive mounts after dockerd at boot)
+    ports:
+      - "127.0.0.1:8090:8090"     # loopback only: inspect what the mocks received at /mock/received
+    environment:
+      PRQA_FIXTURES_DIR: /fixtures
+      PRQA_PROMPTS_DIR: /prompts
+    volumes:
+      - ../fixtures:/fixtures:ro
+      - ../prompts:/prompts:ro
+      - prqa_mock_data:/data
+    networks:
+      - prqa_internal
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+
+  # =========================================================================================================
+  #  PHASE 2 — NOT STARTED BY DEFAULT (compose profile "phase2"). Defined so the design is reviewable and
+  #  testable; `docker compose up` without `--profile phase2` ignores all three services and the extra networks.
+  # =========================================================================================================
+  prqa-docker-proxy:
+    # The ONLY component that touches the Docker socket. Enforces proxy/docker_policy.py on every request
+    # (operation allowlist + body validation: image pin, no privileged/bind/host namespaces, labels bound to the job).
+    profiles: ["phase2"]
+    image: python:3.13-slim
+    command: ["python3", "-I", "/app/docker_policy_proxy.py", "--listen", "/run/prqa/docker-policy.sock",
+              "--upstream", "/var/run/docker.sock", "--image-id", "${PRQA_SANDBOX_IMAGE_ID:-sha256:unset}",
+              "--network", "${PRQA_SANDBOX_NETWORK:-none}",
+              "--socket-gid", "${PRQA_LAUNCHER_GID:-10002}"]
+    volumes:
+      - ../proxy:/app:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - prqa_docker_proxy_sock:/run/prqa
+    restart: on-failure  # not unless-stopped: see Makefile (drive mounts after dockerd at boot)
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+
+  prqa-launcher:
+    # Pulls launch-pending jobs from the worker, verifies artifact + image pin + network, executes the plan through
+    # the policy proxy, reports back. Holds no GitHub/Discord/model-provider/target credentials.
+    profiles: ["phase2"]
+    build:
+      context: ../launcher
+      # launcher/Dockerfile copies worker/prqa_worker and scripts/services/prqa_launcher.py with `COPY --from=src`:
+      # the repository root as the named context `src` (same as its `docker build --build-context src=.`)
+      additional_contexts:
+        src: ..
+    image: prqa/launcher:0.1.0
+    depends_on: [prqa-worker, prqa-docker-proxy]
+    environment:
+      DOCKER_HOST: unix:///run/prqa/docker-policy.sock
+      PRQA_WORKER_URL: http://prqa-worker:8080
+      PRQA_LAUNCHER_TOKEN: ${PRQA_LAUNCHER_TOKEN:-}
+      PRQA_LAUNCHER_ID: launcher-1
+      PRQA_SANDBOX_IMAGE: prqa/opencode-sandbox:local
+      PRQA_SANDBOX_IMAGE_ID: ${PRQA_SANDBOX_IMAGE_ID:-}
+      PRQA_SANDBOX_NETWORK: ${PRQA_SANDBOX_NETWORK:-none}
+      PRQA_LAUNCH_LEASE_S: "120"
+      PRQA_LAUNCH_HEARTBEAT_S: "30"
+      PRQA_CHECKOUT_MAX_MB: ${PRQA_CHECKOUT_MAX_MB:-500}
+      PRQA_MODEL_PROXY_INFERENCE_URL: ${PRQA_MODEL_PROXY_INFERENCE_URL:-}
+      PRQA_MODEL_PROXY_ADMIN_URL: ${PRQA_MODEL_PROXY_ADMIN_URL:-}
+      # restricted mint credential: issue a per-job token and revoke the tokens it issued — never the full admin token
+      PRQA_MODEL_PROXY_MINT_TOKEN: ${PRQA_MODEL_PROXY_MINT_TOKEN:-}
+      PRQA_LAUNCHER_WORKDIR: /work
+    volumes:
+      - prqa_docker_proxy_sock:/run/prqa
+      - prqa_launcher_work:/work
+      # the OpenCode model proxy's ADMIN API (issue/revoke per-job tokens) is this unix socket — never a TCP port
+      - prqa_model_admin_sock_opencode:/run/prqa-model-admin:ro
+    # ONLY the internal launcher network: no default route, no n8n/mocks/model-proxy, no host networking. Docker is
+    # reached solely through the policy proxy's unix socket (volume above); the proxy itself has network_mode: none.
+    networks:
+      - prqa_launcher
+    user: "10002:10002"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+
+  prqa-model-proxy:
+    # Credential-holding egress proxy: sandboxes reach it on the internal sandbox network; it alone reaches the provider.
+    profiles: ["phase2"]
+    image: python:3.13-slim
+    # INFERENCE: TCP 8089 on prqa_sandbox (+ egress for the upstream) — POST /v1/chat/completions with per-job tokens only.
+    # ADMIN: unix socket in prqa_model_admin_sock (0660, group = launcher GID) — shared with prqa-launcher only.
+    command: ["python3", "-I", "/app/model_proxy.py", "--bind", "0.0.0.0", "--port", "8089",
+              "--admin-socket", "/run/prqa-model-admin/admin.sock", "--admin-socket-gid", "${PRQA_LAUNCHER_GID:-10002}"]
+    environment:
+      # Locked provider: direct Groq, GPT-OSS 120B. The proxy also fixes the request contract (stream=false upstream,
+      # temperature 0.2, reasoning_effort low, include_reasoning false, max_completion_tokens <= 3000).
+      PRQA_MODEL_UPSTREAM_ORIGIN: https://api.groq.com
+      PRQA_MODEL_UPSTREAM_PREFIX: /openai/v1
+      PRQA_MODEL_ALLOWED_MODEL: openai/gpt-oss-120b
+      PRQA_MODEL_TEMPERATURE: "0.2"
+      PRQA_MODEL_REASONING_EFFORT: low
+      PRQA_MODEL_MAX_COMPLETION_TOKENS: "3000"
+      # requests per job: a chunked OpenCode run (one session per scenario group) needs more than the default 60
+      PRQA_MODEL_MAX_REQUESTS: ${PRQA_MODEL_MAX_REQUESTS:-60}
+      PRQA_MODEL_PROVIDER_KEY_FILE: /run/secrets/prqa_model_provider_key
+      # four distinct credentials (proxy/model_proxy.py validate): admin (here only; operator via docker exec), mint
+      # (launcher), prompt (n8n workflow 03), per-job tokens (sandboxes, issued at run time)
+      PRQA_MODEL_PROXY_ADMIN_TOKEN: ${PRQA_MODEL_PROXY_ADMIN_TOKEN:-}
+      PRQA_MODEL_PROXY_MINT_TOKEN: ${PRQA_MODEL_PROXY_MINT_TOKEN:-}
+      PRQA_MODEL_PROXY_PROMPT_TOKEN: ${PRQA_MODEL_PROXY_PROMPT_TOKEN:-}
+      PRQA_MODEL_MAX_REQUEST_BYTES: "1048576"
+      PRQA_MODEL_MAX_RESPONSE_BYTES: "8388608"
+      PRQA_MODEL_UPSTREAM_TIMEOUT_S: "120"
+      PRQA_MODEL_ALLOW_MODELS_LISTING: "false"
+      PRQA_MODEL_MAX_CONCURRENT: "1"
+      # Provider budget (proxy/provider_budget.py), shared with scripts/eval/evaluate_groq_live.py through one ledger directory.
+      # Limits come from compose/.env; an empty or invalid value, or a missing directory, stops the proxy from starting.
+      PRQA_PROVIDER_BUDGET_DIR: /run/prqa-budget
+      PRQA_BUDGET_DAILY_REQUESTS: ${PRQA_BUDGET_DAILY_REQUESTS:-}
+      PRQA_BUDGET_DAILY_TOKENS: ${PRQA_BUDGET_DAILY_TOKENS:-}
+      PRQA_BUDGET_JOB_TOKENS: ${PRQA_BUDGET_JOB_TOKENS:-}
+      PRQA_BUDGET_TOKENS_PER_MINUTE: ${PRQA_BUDGET_TOKENS_PER_MINUTE:-}
+      PRQA_BUDGET_MAX_IN_FLIGHT: ${PRQA_BUDGET_MAX_IN_FLIGHT:-}
+      PRQA_BUDGET_PROXY_BYTES_PER_TOKEN: ${PRQA_BUDGET_PROXY_BYTES_PER_TOKEN:-}
+      PRQA_BUDGET_MAX_WAIT_S: ${PRQA_BUDGET_MAX_WAIT_S:-}
+    secrets:
+      - prqa_model_provider_key
+    volumes:
+      - ../proxy:/app:ro
+      - prqa_model_admin_sock:/run/prqa-model-admin
+      # private (700) ledger directory provisioned by scripts/setup/provision_model_proxy_secrets.py; never auto-created
+      - type: bind
+        source: ${PRQA_PROVIDER_BUDGET_DIR:-/nonexistent/prqa-provider-budget-not-provisioned}
+        target: /run/prqa-budget
+        bind:
+          create_host_path: false
+    group_add:
+      - "${PRQA_LAUNCHER_GID:-10002}"         # only to hand the admin socket to the launcher's group
+    networks:
+      - prqa_sandbox
+      - prqa_prompt
+      - prqa_egress
+    # uid = owner of the mode-600 provider key file (PRQA_MODEL_PROXY_UID, recorded next to PRQA_MODEL_PROVIDER_KEY_FILE by
+    # scripts/setup/provision_model_proxy_secrets.py): compose file secrets are bind mounts that keep the host owner and mode,
+    # so only that uid can read the key. No other service mounts the secret.
+    user: "${PRQA_MODEL_PROXY_UID:-10003}:10003"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+
+  prqa-model-proxy-opencode:
+    # The OpenCode sandbox's ONLY model endpoint (prompt generation keeps using prqa-model-proxy → Groq). Same proxy code
+    # and request contract; upstream = OpenCode Zen's free GLM-5.3-Flash (compose/.env PRQA_OPENCODE_*), own key file,
+    # own ledger, own admin socket (shared with prqa-launcher only). Not on prqa_prompt: n8n cannot reach it.
+    profiles: ["phase2"]
+    image: python:3.13-slim
+    command: ["python3", "-I", "/app/model_proxy.py", "--bind", "0.0.0.0", "--port", "8089",
+              "--admin-socket", "/run/prqa-model-admin/admin.sock", "--admin-socket-gid", "${PRQA_LAUNCHER_GID:-10002}"]
+    environment:
+      PRQA_MODEL_UPSTREAM_ORIGIN: ${PRQA_OPENCODE_UPSTREAM_ORIGIN:-https://opencode.ai}
+      PRQA_MODEL_UPSTREAM_PREFIX: ${PRQA_OPENCODE_UPSTREAM_PREFIX:-/inference/openai/v1}
+      PRQA_MODEL_ALLOWED_MODEL: ${PRQA_OPENCODE_ALLOWED_MODEL:-glm-5.3-flash-free}
+      PRQA_MODEL_TEMPERATURE: "0.2"
+      PRQA_MODEL_REASONING_EFFORT: none          # Groq-only parameters are not sent to this provider
+      PRQA_MODEL_MAX_COMPLETION_TOKENS: "3000"
+      PRQA_MODEL_MAX_REQUESTS: ${PRQA_MODEL_MAX_REQUESTS:-60}
+      PRQA_MODEL_PROVIDER_KEY_FILE: /run/secrets/prqa_opencode_provider_key
+      PRQA_MODEL_PROXY_ADMIN_TOKEN: ${PRQA_MODEL_PROXY_ADMIN_TOKEN:-}
+      PRQA_MODEL_PROXY_MINT_TOKEN: ${PRQA_MODEL_PROXY_MINT_TOKEN:-}
+      PRQA_MODEL_MAX_REQUEST_BYTES: "1048576"
+      PRQA_MODEL_MAX_RESPONSE_BYTES: "8388608"
+      PRQA_MODEL_UPSTREAM_TIMEOUT_S: "120"
+      PRQA_MODEL_ALLOW_MODELS_LISTING: "false"
+      PRQA_MODEL_MAX_CONCURRENT: "1"
+      PRQA_PROVIDER_BUDGET_DIR: /run/prqa-budget
+      PRQA_BUDGET_DAILY_REQUESTS: ${PRQA_BUDGET_DAILY_REQUESTS:-}
+      PRQA_BUDGET_DAILY_TOKENS: ${PRQA_BUDGET_DAILY_TOKENS:-}
+      PRQA_BUDGET_JOB_TOKENS: ${PRQA_BUDGET_JOB_TOKENS:-}
+      PRQA_BUDGET_TOKENS_PER_MINUTE: ${PRQA_OPENCODE_BUDGET_TOKENS_PER_MINUTE:-}
+      PRQA_BUDGET_MAX_IN_FLIGHT: ${PRQA_BUDGET_MAX_IN_FLIGHT:-}
+      PRQA_BUDGET_PROXY_BYTES_PER_TOKEN: ${PRQA_BUDGET_PROXY_BYTES_PER_TOKEN:-}
+      PRQA_BUDGET_MAX_WAIT_S: ${PRQA_BUDGET_MAX_WAIT_S:-}
+    secrets:
+      - prqa_opencode_provider_key
+    volumes:
+      - ../proxy:/app:ro
+      - prqa_model_admin_sock_opencode:/run/prqa-model-admin
+      - type: bind
+        source: ${PRQA_OPENCODE_BUDGET_DIR:-/nonexistent/prqa-opencode-budget-not-provisioned}
+        target: /run/prqa-budget
+        bind:
+          create_host_path: false
+    group_add:
+      - "${PRQA_LAUNCHER_GID:-10002}"
+    networks:
+      - prqa_sandbox
+      - prqa_egress
+    user: "${PRQA_MODEL_PROXY_UID:-10003}:10003"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+
+secrets:
+  prqa_model_provider_key:
+    file: ${PRQA_MODEL_PROVIDER_KEY_FILE:-/dev/null}
+  prqa_opencode_provider_key:
+    file: ${PRQA_OPENCODE_PROVIDER_KEY_FILE:-/dev/null}
+
+volumes:
+  n8n_data:
+  prqa_worker_data:
+  prqa_mock_data:
+  prqa_docker_proxy_sock:
+  prqa_launcher_work:
+  # Admin socket of the model proxy: a tmpfs owned by the proxy (PRQA_MODEL_PROXY_UID), group = launcher GID, no other access.
+  prqa_model_admin_sock:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=${PRQA_MODEL_PROXY_UID:-10003},gid=${PRQA_LAUNCHER_GID:-10002},mode=0770"
+  prqa_model_admin_sock_opencode:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=${PRQA_MODEL_PROXY_UID:-10003},gid=${PRQA_LAUNCHER_GID:-10002},mode=0770"
+
+networks:
+  prqa_internal:
+    driver: bridge
+  # Sandbox network: INTERNAL (no default route). Only the model proxy bridges it to prqa_egress. The launcher refuses
+  # any sandbox network that is not internal and labelled prqa.net=sandbox.
+  prqa_sandbox:
+    driver: bridge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"   # no host address on the bridge: sandboxes reach only the proxy
+    labels:
+      prqa.net: sandbox
+  prqa_egress:
+    driver: bridge
+  # Prompt-generation network: INTERNAL. Members: n8n and prqa-model-proxy only (workflow 03 -> inference listener with
+  # the prompt credential). No sandbox, launcher or worker joins it.
+  prqa_prompt:
+    driver: bridge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+    labels:
+      prqa.net: prompt
+  # Launcher network: INTERNAL (no default route, no external connectivity). Members: prqa-launcher and prqa-worker
+  # (port 8080, the launcher API). Nothing else joins it; the launcher reaches the model proxy's admin API only through
+  # the prqa_model_admin_sock unix socket (see docs/SANDBOX_TRUST_BOUNDARY.md §5b/§5c).
+  # inhibit_ipv4: the host gets NO address on this bridge, so the launcher cannot reach host services through the
+  # gateway either (a plain internal network still lets members connect to host ports the host firewall allows).
+  prqa_launcher:
+    driver: bridge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+    labels:
+      prqa.net: launcher

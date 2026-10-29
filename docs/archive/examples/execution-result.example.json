@@ -1,0 +1,378 @@
+{
+  "_note": "ILLUSTRATIVE EXAMPLE ONLY. These tests were NOT executed. All hosts, IDs, tokens and results are fictional placeholders.",
+  "result_version": "1.0",
+  "illustrative": true,
+  "run_id": "20261018T143000Z-acme-orders-pr42-a1b2c3d",
+  "project_id": "acme-orders",
+  "environment": "staging",
+  "base_url": "https://orders.staging.example.test",
+  "pr": {
+    "repository": "example-org/orders-service",
+    "number": 42,
+    "title": "Add status filter and cancellation reason to orders API",
+    "base_ref": "main",
+    "head_ref": "feature/order-status-filter",
+    "base_sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+    "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+  },
+  "plan": {
+    "plan_id": "plan-acme-orders-pr42-v1",
+    "plan_sha256": "3c9d0b6f1e2a4c8d7b5e6f9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+    "test_level": "standard",
+    "generated_by": {
+      "provider": "manual_chatgpt",
+      "model": "ChatGPT Free (web interface)",
+      "prompt_version": "v1"
+    },
+    "approval": {
+      "approved_by": "qa-reviewer",
+      "approved_at": "2026-10-18T14:25:00Z",
+      "destructive_allowed": false
+    }
+  },
+  "runner": {
+    "version": "0.1.0",
+    "python_version": "3.13.11",
+    "curl_version": "8.17.0",
+    "host": "qa-runner"
+  },
+  "timing": {
+    "started_at": "2026-10-18T14:30:00Z",
+    "finished_at": "2026-10-18T14:30:41Z",
+    "duration_ms": 41230
+  },
+  "summary": {
+    "overall_status": "FAILED",
+    "total": 8,
+    "pass": 6,
+    "fail": 1,
+    "error": 1,
+    "blocked": 0,
+    "skipped": 0,
+    "requests_sent": 12,
+    "request_budget": 60,
+    "exit_code": 1
+  },
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "title": "List orders filtered by status=pending returns 200",
+      "purpose": "Verify the new status filter returns only pending orders for the caller's tenant.",
+      "scope_ref": "PR #42: GET /v1/orders adds query parameter 'status'",
+      "category": "happy_path",
+      "auth_profile": "tenant_a_user",
+      "status": "PASS",
+      "failure_class": null,
+      "request": {
+        "method": "GET",
+        "url": "https://orders.staging.example.test/v1/orders?status=pending&limit=20",
+        "headers": { "Authorization": "[REDACTED]", "Accept": "application/json" },
+        "body": null
+      },
+      "expected": {
+        "status": [200],
+        "schema": "#/components/schemas/OrderList",
+        "assertions": ["$.data[*].status equals 'pending'", "$.data length_lte 20"]
+      },
+      "actual": {
+        "status": 200,
+        "duration_ms": 184,
+        "body_excerpt": {
+          "data": [
+            { "id": "ord_qa_0001", "status": "pending", "customer_email": "[REDACTED:email]" }
+          ],
+          "pagination": { "limit": 20, "next_cursor": null }
+        }
+      },
+      "assertions": [
+        { "description": "status code in [200]", "result": "PASS", "expected": "[200]", "actual": "200" },
+        { "description": "body matches OrderList schema", "result": "PASS", "expected": "valid", "actual": "valid" },
+        { "description": "$.data[*].status equals 'pending'", "result": "PASS", "expected": "pending", "actual": "pending (1/1)" }
+      ],
+      "attempts": 1,
+      "duration_ms": 184,
+      "evidence": ["evidence/TC-001.attempt-1.json"],
+      "finding": null
+    },
+    {
+      "id": "TC-002",
+      "title": "Invalid status filter value returns 400",
+      "purpose": "Verify unsupported filter values are rejected with a validation error.",
+      "scope_ref": "PR #42: status enum validation on GET /v1/orders",
+      "category": "validation",
+      "auth_profile": "tenant_a_user",
+      "status": "PASS",
+      "failure_class": null,
+      "request": {
+        "method": "GET",
+        "url": "https://orders.staging.example.test/v1/orders?status=not_a_status",
+        "headers": { "Authorization": "[REDACTED]", "Accept": "application/json" },
+        "body": null
+      },
+      "expected": {
+        "status": [400],
+        "schema": "#/components/schemas/Error",
+        "assertions": ["$.error.code equals 'INVALID_QUERY_PARAMETER'"]
+      },
+      "actual": {
+        "status": 400,
+        "duration_ms": 97,
+        "body_excerpt": { "error": { "code": "INVALID_QUERY_PARAMETER", "field": "status" } }
+      },
+      "assertions": [
+        { "description": "status code in [400]", "result": "PASS", "expected": "[400]", "actual": "400" },
+        { "description": "$.error.code equals 'INVALID_QUERY_PARAMETER'", "result": "PASS", "expected": "INVALID_QUERY_PARAMETER", "actual": "INVALID_QUERY_PARAMETER" }
+      ],
+      "attempts": 1,
+      "duration_ms": 97,
+      "evidence": ["evidence/TC-002.attempt-1.json"],
+      "finding": null
+    },
+    {
+      "id": "TC-003",
+      "title": "Cancel pending order with reason returns 200",
+      "purpose": "Verify a pending order can be cancelled and the reason is persisted.",
+      "scope_ref": "PR #42: POST /v1/orders/{orderId}/cancel adds 'reason'",
+      "category": "happy_path",
+      "auth_profile": "tenant_a_user",
+      "status": "PASS",
+      "failure_class": null,
+      "request": {
+        "method": "POST",
+        "url": "https://orders.staging.example.test/v1/orders/ord_qa_0001/cancel",
+        "headers": { "Authorization": "[REDACTED]", "Content-Type": "application/json" },
+        "body": { "reason": "customer_request" }
+      },
+      "expected": {
+        "status": [200],
+        "schema": "#/components/schemas/Order",
+        "assertions": ["$.status equals 'cancelled'", "$.cancellation_reason equals 'customer_request'"]
+      },
+      "actual": {
+        "status": 200,
+        "duration_ms": 212,
+        "body_excerpt": { "id": "ord_qa_0001", "status": "cancelled", "cancellation_reason": "customer_request" }
+      },
+      "assertions": [
+        { "description": "status code in [200]", "result": "PASS", "expected": "[200]", "actual": "200" },
+        { "description": "$.status equals 'cancelled'", "result": "PASS", "expected": "cancelled", "actual": "cancelled" },
+        { "description": "$.cancellation_reason equals 'customer_request'", "result": "PASS", "expected": "customer_request", "actual": "customer_request" }
+      ],
+      "attempts": 1,
+      "duration_ms": 212,
+      "evidence": ["evidence/TC-003.attempt-1.json"],
+      "finding": null
+    },
+    {
+      "id": "TC-004",
+      "title": "Cancel without reason returns 422",
+      "purpose": "Verify the newly required 'reason' field is enforced.",
+      "scope_ref": "PR #42: 'reason' is required in CancelOrderRequest",
+      "category": "missing_null",
+      "auth_profile": "tenant_a_user",
+      "status": "PASS",
+      "failure_class": null,
+      "request": {
+        "method": "POST",
+        "url": "https://orders.staging.example.test/v1/orders/ord_qa_0002/cancel",
+        "headers": { "Authorization": "[REDACTED]", "Content-Type": "application/json" },
+        "body": {}
+      },
+      "expected": {
+        "status": [422],
+        "schema": "#/components/schemas/Error",
+        "assertions": ["$.error.field equals 'reason'"]
+      },
+      "actual": {
+        "status": 422,
+        "duration_ms": 88,
+        "body_excerpt": { "error": { "code": "VALIDATION_ERROR", "field": "reason" } }
+      },
+      "assertions": [
+        { "description": "status code in [422]", "result": "PASS", "expected": "[422]", "actual": "422" },
+        { "description": "$.error.field equals 'reason'", "result": "PASS", "expected": "reason", "actual": "reason" }
+      ],
+      "attempts": 1,
+      "duration_ms": 88,
+      "evidence": ["evidence/TC-004.attempt-1.json"],
+      "finding": null
+    },
+    {
+      "id": "TC-005",
+      "title": "Cancel already-cancelled order returns 409",
+      "purpose": "Verify cancelling an order twice is rejected as a state conflict, not a server error.",
+      "scope_ref": "PR #42: cancellation state machine; OpenAPI documents 409 for already-cancelled orders",
+      "category": "business_rule",
+      "auth_profile": "tenant_a_user",
+      "status": "FAIL",
+      "failure_class": "UNEXPECTED_5XX",
+      "request": {
+        "method": "POST",
+        "url": "https://orders.staging.example.test/v1/orders/ord_qa_0001/cancel",
+        "headers": { "Authorization": "[REDACTED]", "Content-Type": "application/json" },
+        "body": { "reason": "duplicate_request" }
+      },
+      "expected": {
+        "status": [409],
+        "schema": "#/components/schemas/Error",
+        "assertions": ["$.error.code equals 'ORDER_ALREADY_CANCELLED'"]
+      },
+      "actual": {
+        "status": 500,
+        "duration_ms": 341,
+        "body_excerpt": { "error": { "code": "INTERNAL_ERROR", "message": "Internal server error", "trace_id": "[REDACTED]" } }
+      },
+      "assertions": [
+        { "description": "status code in [409]", "result": "FAIL", "expected": "[409]", "actual": "500" },
+        { "description": "$.error.code equals 'ORDER_ALREADY_CANCELLED'", "result": "FAIL", "expected": "ORDER_ALREADY_CANCELLED", "actual": "INTERNAL_ERROR" }
+      ],
+      "attempts": 1,
+      "reproduction_attempts": 2,
+      "duration_ms": 341,
+      "depends_on": ["TC-003"],
+      "evidence": [
+        "evidence/TC-005.attempt-1.json",
+        "evidence/TC-005.repro-1.json",
+        "evidence/TC-005.repro-2.json"
+      ],
+      "finding": "F-001"
+    },
+    {
+      "id": "TC-006",
+      "title": "Tenant B cannot cancel tenant A order (404/403)",
+      "purpose": "Verify tenant isolation on the cancellation endpoint.",
+      "scope_ref": "PR #42: POST /v1/orders/{orderId}/cancel authorization",
+      "category": "tenant_isolation",
+      "auth_profile": "tenant_b_user",
+      "status": "PASS",
+      "failure_class": null,
+      "request": {
+        "method": "POST",
+        "url": "https://orders.staging.example.test/v1/orders/ord_qa_0002/cancel",
+        "headers": { "Authorization": "[REDACTED]", "Content-Type": "application/json" },
+        "body": { "reason": "customer_request" }
+      },
+      "expected": {
+        "status": [403, 404],
+        "schema": "#/components/schemas/Error",
+        "assertions": ["$.status not_exists", "$.cancellation_reason not_exists"]
+      },
+      "actual": {
+        "status": 404,
+        "duration_ms": 93,
+        "body_excerpt": { "error": { "code": "ORDER_NOT_FOUND" } }
+      },
+      "assertions": [
+        { "description": "status code in [403, 404]", "result": "PASS", "expected": "[403, 404]", "actual": "404" },
+        { "description": "response does not leak order fields", "result": "PASS", "expected": "absent", "actual": "absent" }
+      ],
+      "attempts": 1,
+      "duration_ms": 93,
+      "evidence": ["evidence/TC-006.attempt-1.json"],
+      "finding": null
+    },
+    {
+      "id": "TC-007",
+      "title": "Unauthenticated list returns 401",
+      "purpose": "Verify the list endpoint with the new filter still requires authentication.",
+      "scope_ref": "PR #42: GET /v1/orders authentication unchanged",
+      "category": "authentication",
+      "auth_profile": "anonymous",
+      "status": "ERROR",
+      "failure_class": "TIMEOUT",
+      "request": {
+        "method": "GET",
+        "url": "https://orders.staging.example.test/v1/orders?status=pending",
+        "headers": { "Accept": "application/json" },
+        "body": null
+      },
+      "expected": {
+        "status": [401],
+        "schema": "#/components/schemas/Error",
+        "assertions": []
+      },
+      "actual": {
+        "status": null,
+        "duration_ms": 10000,
+        "body_excerpt": null,
+        "transport_error": "curl exit 28: operation timed out after 10000 ms"
+      },
+      "assertions": [],
+      "attempts": 3,
+      "retry_history": [
+        { "attempt": 1, "outcome": "TIMEOUT", "backoff_ms": 2000 },
+        { "attempt": 2, "outcome": "TIMEOUT", "backoff_ms": 4000 },
+        { "attempt": 3, "outcome": "TIMEOUT", "backoff_ms": null }
+      ],
+      "duration_ms": 36000,
+      "evidence": [
+        "evidence/TC-007.attempt-1.json",
+        "evidence/TC-007.attempt-2.json",
+        "evidence/TC-007.attempt-3.json"
+      ],
+      "finding": null
+    },
+    {
+      "id": "TC-008",
+      "title": "Regression: GET /v1/orders/{orderId} schema unchanged",
+      "purpose": "Verify the single-order response still matches the documented Order schema after adding cancellation_reason.",
+      "scope_ref": "PR #42: Order schema gains optional 'cancellation_reason'",
+      "category": "regression",
+      "auth_profile": "tenant_a_user",
+      "status": "PASS",
+      "failure_class": null,
+      "request": {
+        "method": "GET",
+        "url": "https://orders.staging.example.test/v1/orders/ord_qa_0002",
+        "headers": { "Authorization": "[REDACTED]", "Accept": "application/json" },
+        "body": null
+      },
+      "expected": {
+        "status": [200],
+        "schema": "#/components/schemas/Order",
+        "assertions": ["$.id equals 'ord_qa_0002'"]
+      },
+      "actual": {
+        "status": 200,
+        "duration_ms": 102,
+        "body_excerpt": { "id": "ord_qa_0002", "status": "pending", "customer_email": "[REDACTED:email]", "cancellation_reason": null }
+      },
+      "assertions": [
+        { "description": "status code in [200]", "result": "PASS", "expected": "[200]", "actual": "200" },
+        { "description": "body matches Order schema", "result": "PASS", "expected": "valid", "actual": "valid" },
+        { "description": "$.id equals 'ord_qa_0002'", "result": "PASS", "expected": "ord_qa_0002", "actual": "ord_qa_0002" }
+      ],
+      "attempts": 1,
+      "duration_ms": 102,
+      "evidence": ["evidence/TC-008.attempt-1.json"],
+      "finding": null
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "F-001",
+      "test_case_id": "TC-005",
+      "title": "Cancelling an already-cancelled order returns 500 instead of documented 409",
+      "confidence": "CONFIRMED",
+      "severity": "S2",
+      "reproduced": "2/2",
+      "contract_reference": "openapi/openapi.yaml#/paths/~1v1~1orders~1{orderId}~1cancel/post/responses/409",
+      "rationale": "Deterministic status assertion failed on the original attempt and on 2 of 2 reproduction runs; the 409 response is documented in the API contract.",
+      "evidence": [
+        "evidence/TC-005.attempt-1.json",
+        "evidence/TC-005.repro-1.json",
+        "evidence/TC-005.repro-2.json"
+      ]
+    }
+  ],
+  "redaction": {
+    "applied": true,
+    "rules_version": "1.0",
+    "redacted_values": 17
+  },
+  "limitations": [
+    "ILLUSTRATIVE: this result was not produced by an actual execution.",
+    "TC-007 could not be evaluated (TIMEOUT after 2 retries); authentication behavior of GET /v1/orders is unverified in this run.",
+    "Results reflect the staging deployment at run time, not the PR source code directly."
+  ]
+}

@@ -1,0 +1,356 @@
+{
+  "id": "PrqaErrorHandler",
+  "name": "PRQA 08 · Error Handler",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## PRQA 08 · Error Handler\nSet as the *Error workflow* of every PRQA workflow. Records a sanitized event on the worker and sends an alert: real Discord only when the worker reports `discord_mode == 'real'`, otherwise the mock sink. Raw error messages, URLs and tokens never leave *Sanitize Error*.",
+        "height": 150,
+        "width": 860,
+        "color": 1
+      },
+      "id": "c3b180f0-b128-5f48-962f-69672709784b",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -20
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "064d8b60-9b77-545c-b3a3-664dba47f186",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Trigger payload → compact, redacted record (no stack traces, URLs or tokens leave this node).\nconst e = $input.first().json;\nconst redact = (s) => String(s || '').slice(0, 400).replace(/https?:\\/\\/\\S+/g, '[url]')\n  .replace(/gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\\w+|xai-[A-Za-z0-9]{20,}|eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+/g, '[token]');\nconst exec = e.execution || {};\nconst err = (exec.error || e.error || {});\nreturn [{ json: {\n  kind: 'pipeline_error',\n  detail: {\n    workflow_name: (e.workflow || {}).name || null,\n    workflow_id: (e.workflow || {}).id || null,\n    execution_id: exec.id || null,\n    last_node: exec.lastNodeExecuted || null,\n    error_message: redact(err.message),\n    error_node: (err.node && err.node.name) || null,\n    mode: exec.mode || null,\n    retry_of: exec.retryOf || null,\n  },\n}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "2c19f99f-b57b-5c9c-b327-b8aa22f9fd91",
+      "name": "Sanitize Error (no raw messages / URLs / tokens)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRQA_WORKER_URL }}/events",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "7f08c917-3b8f-505d-8485-53f5823b341a",
+      "name": "Log Error Event (worker /events)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PRQA_WORKER_URL }}/config",
+        "authentication": "none",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Worker-Token",
+              "value": "={{ $env.PRQA_WORKER_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "bc64b6e8-1c65-5082-b7ed-4c41c9c145e9",
+      "name": "Load Policy (worker /config)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6c90c38e-d352-5f89-8049-7cbd55e0d700",
+              "leftValue": "={{ $json.endpoints ? $json.endpoints.discord_mode : 'mock' }}",
+              "rightValue": "real",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c2c06cee-90a3-5b80-8ad1-c709addf0236",
+              "leftValue": "={{ $env.DISCORD_WEBHOOK_URL || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "01dab462-d27c-52b5-83b8-fc16cf18309b",
+      "name": "Real Discord Alerts Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ],
+      "notes": "false in Phase 1",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "authentication": "none",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ username: 'PR QA Pilot', allowed_mentions: { parse: [] }, content: '🚨 PRQA pipeline error', embeds: [{ title: 'Workflow error: ' + ($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.workflow_name || 'unknown'), color: 15158332, fields: [ { name: 'Execution', value: String($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.execution_id || 'n/a'), inline: true }, { name: 'Last node', value: String($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.last_node || 'n/a'), inline: true }, { name: 'Message', value: String($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.error_message || 'n/a').slice(0, 900), inline: false } ] }] }) }}"
+      },
+      "id": "944f0f6e-9d63-51bb-b021-21258710cc83",
+      "name": "Alert Discord (REAL webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        180
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.endpoints ? $json.endpoints.discord_mock_url : 'http://prqa-mocks:8090/discord/api/webhooks/000000000000000000/mock-token' }}",
+        "authentication": "none",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ username: 'PR QA Pilot', allowed_mentions: { parse: [] }, content: '🚨 PRQA pipeline error', embeds: [{ title: 'Workflow error: ' + ($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.workflow_name || 'unknown'), color: 15158332, fields: [ { name: 'Execution', value: String($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.execution_id || 'n/a'), inline: true }, { name: 'Last node', value: String($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.last_node || 'n/a'), inline: true }, { name: 'Message', value: String($('Sanitize Error (no raw messages / URLs / tokens)').first().json.detail.error_message || 'n/a').slice(0, 900), inline: false } ] }] }) }}"
+      },
+      "id": "afa76190-6647-5c64-a07c-a1005ab3a309",
+      "name": "Alert Mock Discord Sink (dry-run)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        420
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {},
+      "id": "9558fbba-2502-5799-bbf2-40e187df84d8",
+      "name": "Error Handled (end)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Error (no raw messages / URLs / tokens)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Error (no raw messages / URLs / tokens)": {
+      "main": [
+        [
+          {
+            "node": "Log Error Event (worker /events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error Event (worker /events)": {
+      "main": [
+        [
+          {
+            "node": "Load Policy (worker /config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Policy (worker /config)": {
+      "main": [
+        [
+          {
+            "node": "Real Discord Alerts Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Real Discord Alerts Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Alert Discord (REAL webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Mock Discord Sink (dry-run)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Discord (REAL webhook)": {
+      "main": [
+        [
+          {
+            "node": "Error Handled (end)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Mock Discord Sink (dry-run)": {
+      "main": [
+        [
+          {
+            "node": "Error Handled (end)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "prqa": {
+      "generated_by": "scripts/build/build_workflows.py",
+      "review_only": true
+    }
+  },
+  "versionId": "b1fa04fa-29ec-5c1c-a820-89f241b87027"
+}
